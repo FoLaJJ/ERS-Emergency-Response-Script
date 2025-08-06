@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>挖矿事件响应日志查看器</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+            height: calc(100vh - 200px);
+        }
+
+        .sidebar {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+            overflow-y: auto;
+        }
+
+        .content-area {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+            overflow-y: auto;
+        }
+
+        .file-list {
+            margin-bottom: 20px;
+        }
+
+        .file-list h3 {
+            color: #4a5568;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 8px;
+        }
+
+        .file-item {
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .file-item:hover {
+            background: #edf2f7;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .file-item.active {
+            background: #4299e1;
+            color: white;
+            border-color: #3182ce;
+        }
+
+        .file-name {
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .file-info {
+            font-size: 0.85em;
+            opacity: 0.7;
+        }
+
+        .log-content {
+            font-family: 'Courier New', monospace;
+            line-height: 1.6;
+        }
+
+        .log-line {
+            padding: 4px 8px;
+            margin: 2px 0;
+            border-radius: 4px;
+            word-wrap: break-word;
+        }
+
+        .log-line.info {
+            background: #f0f9ff;
+            border-left: 3px solid #3b82f6;
+        }
+
+        .log-line.warning {
+            background: #fffbeb;
+            border-left: 3px solid #f59e0b;
+        }
+
+        .log-line.critical {
+            background: #fef2f2;
+            border-left: 3px solid #ef4444;
+        }
+
+        .log-line.success {
+            background: #f0fdf4;
+            border-left: 3px solid #22c55e;
+        }
+
+        .log-line.error {
+            background: #fef2f2;
+            border-left: 3px solid #dc2626;
+        }
+
+        .log-line.task {
+            background: #f8fafc;
+            border-left: 3px solid #64748b;
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+
+        .log-line.command {
+            background: #f1f5f9;
+            border-left: 3px solid #475569;
+            font-style: italic;
+        }
+
+        .log-line.result {
+            background: #f8fafc;
+            border-left: 3px solid #64748b;
+        }
+
+        .timestamp {
+            color: #6b7280;
+            font-size: 0.9em;
+        }
+
+        .level-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+
+        .level-badge.info { background: #dbeafe; color: #1e40af; }
+        .level-badge.warning { background: #fef3c7; color: #92400e; }
+        .level-badge.critical { background: #fee2e2; color: #991b1b; }
+        .level-badge.success { background: #dcfce7; color: #166534; }
+        .level-badge.error { background: #fee2e2; color: #991b1b; }
+
+        .suspicious-section {
+            margin-top: 20px;
+        }
+
+        .suspicious-item {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+        }
+
+        .suspicious-title {
+            font-weight: bold;
+            color: #dc2626;
+            margin-bottom: 8px;
+        }
+
+        .suspicious-content {
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            background: #f8fafc;
+            padding: 10px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6b7280;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #6b7280;
+        }
+
+        .empty-state h3 {
+            margin-bottom: 10px;
+            color: #4a5568;
+        }
+
+        .refresh-btn {
+            background: #4299e1;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: background 0.3s ease;
+        }
+
+        .refresh-btn:hover {
+            background: #3182ce;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        .error-message {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+            color: #dc2626;
+        }
+
+        .debug-info {
+            background: #f0f9ff;
+            border: 1px solid #bae6fd;
+            border-radius: 8px;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 0.9em;
+            color: #0369a1;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+                height: auto;
+            }
+            
+            .container {
+                padding: 10px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 挖矿事件响应日志查看器</h1>
+            <p>可视化查看系统安全调查结果</p>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-number" id="total-files">0</div>
+                <div class="stat-label">日志文件</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="total-suspicious">0</div>
+                <div class="stat-label">可疑项目</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="latest-time">-</div>
+                <div class="stat-label">最新检查</div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="sidebar">
+                <div class="file-list">
+                    <h3>📁 日志文件列表</h3>
+                    <button class="refresh-btn" onclick="refreshFiles()">🔄 刷新</button>
+                    <div id="file-list-container">
+                        <div class="loading">加载中...</div>
+                    </div>
+                </div>
+
+                <div class="suspicious-section">
+                    <h3>⚠️ 可疑项目</h3>
+                    <div id="suspicious-container">
+                        <div class="empty-state">
+                            <h3>暂无可疑项目</h3>
+                            <p>运行调查脚本后，可疑项目将显示在这里</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="content-area">
+                <div id="content-container">
+                    <div class="empty-state">
+                        <h3>欢迎使用日志查看器</h3>
+                        <p>请从左侧选择一个日志文件来查看详细内容</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentFile = null;
+
+        // 页面加载时获取文件列表
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshFiles();
+            loadSuspiciousItems();
+        });
+
+        // 刷新文件列表
+        async function refreshFiles() {
+            try {
+                const response = await fetch('/api/files');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                displayFiles(data.files);
+                updateStats(data.files);
+            } catch (error) {
+                console.error('获取文件列表失败:', error);
+                document.getElementById('file-list-container').innerHTML = 
+                    `<div class="error-message">
+                        <h3>加载失败</h3>
+                        <p>无法获取文件列表: ${error.message}</p>
+                        <div class="debug-info">
+                            请检查:<br>
+                            1. Web服务器是否正在运行<br>
+                            2. 是否有日志文件存在<br>
+                            3. 网络连接是否正常
+                        </div>
+                    </div>`;
+            }
+        }
+
+        // 显示文件列表
+        function displayFiles(files) {
+            const container = document.getElementById('file-list-container');
+            
+            if (files.length === 0) {
+                container.innerHTML = '<div class="empty-state"><h3>暂无日志文件</h3><p>请先运行调查脚本</p></div>';
+                return;
+            }
+
+            let html = '';
+            files.forEach(file => {
+                const size = formatFileSize(file.size);
+                const time = formatTimestamp(file.timestamp);
+                
+                html += `
+                    <div class="file-item" onclick="loadFile('${file.path}')">
+                        <div class="file-name">${file.name}</div>
+                        <div class="file-info">
+                            <span class="level-badge ${file.type}">${file.type === 'main' ? '主日志' : '模块'}</span>
+                            ${time} • ${size}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+
+        // 加载文件内容
+        async function loadFile(filePath) {
+            // 更新选中状态
+            document.querySelectorAll('.file-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            event.target.closest('.file-item').classList.add('active');
+
+            currentFile = filePath;
+            const container = document.getElementById('content-container');
+            container.innerHTML = '<div class="loading">加载中...</div>';
+
+            try {
+                const response = await fetch(`/api/log/${encodeURIComponent(filePath)}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                displayLogContent(data.content);
+            } catch (error) {
+                console.error('加载文件失败:', error);
+                container.innerHTML = `
+                    <div class="error-message">
+                        <h3>加载失败</h3>
+                        <p>无法读取文件内容: ${error.message}</p>
+                        <div class="debug-info">
+                            文件路径: ${filePath}<br>
+                            请检查文件是否存在且可读
+                        </div>
+                    </div>`;
+            }
+        }
+
+        // 显示日志内容
+        function displayLogContent(content) {
+            const container = document.getElementById('content-container');
+            
+            if (content.length === 0) {
+                container.innerHTML = '<div class="empty-state"><h3>文件为空</h3><p>该日志文件没有内容</p></div>';
+                return;
+            }
+
+            let html = '<div class="log-content">';
+            content.forEach(line => {
+                const lineClass = getLineClass(line);
+                const levelBadge = line.level ? `<span class="level-badge ${line.level}">${line.level.toUpperCase()}</span>` : '';
+                const timestamp = line.timestamp ? `<span class="timestamp">${line.timestamp}</span>` : '';
+                
+                html += `
+                    <div class="log-line ${lineClass}">
+                        ${levelBadge}
+                        ${timestamp}
+                        <span class="content">${escapeHtml(line.content)}</span>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            
+            container.innerHTML = html;
+        }
+
+        // 获取行样式类
+        function getLineClass(line) {
+            if (line.type === 'task') return 'task';
+            if (line.type === 'command') return 'command';
+            if (line.type === 'result') return 'result';
+            if (line.level) return line.level;
+            return 'info';
+        }
+
+        // 加载可疑项目
+        async function loadSuspiciousItems() {
+            try {
+                const response = await fetch('/api/suspicious');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                displaySuspiciousItems(data.items);
+            } catch (error) {
+                console.error('获取可疑项目失败:', error);
+                document.getElementById('suspicious-container').innerHTML = 
+                    `<div class="error-message">
+                        <h3>加载可疑项目失败</h3>
+                        <p>${error.message}</p>
+                    </div>`;
+            }
+        }
+
+        // 显示可疑项目
+        function displaySuspiciousItems(items) {
+            const container = document.getElementById('suspicious-container');
+            
+            if (items.length === 0) {
+                container.innerHTML = '<div class="empty-state"><h3>暂无可疑项目</h3><p>运行调查脚本后，可疑项目将显示在这里</p></div>';
+                return;
+            }
+
+            let html = '';
+            items.forEach(item => {
+                html += `
+                    <div class="suspicious-item">
+                        <div class="suspicious-title">${item.type}</div>
+                        <div class="suspicious-content">${escapeHtml(item.content)}</div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+
+        // 更新统计信息
+        function updateStats(files) {
+            document.getElementById('total-files').textContent = files.length;
+            
+            let suspiciousCount = 0;
+            // 这里可以根据实际需要计算可疑项目数量
+            document.getElementById('total-suspicious').textContent = suspiciousCount;
+            
+            if (files.length > 0) {
+                const latestFile = files[0];
+                document.getElementById('latest-time').textContent = formatTimestamp(latestFile.timestamp);
+            }
+        }
+
+        // 格式化文件大小
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
+        // 格式化时间戳
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return '-';
+            try {
+                const date = new Date(timestamp.replace(/_/g, ' ').replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'));
+                return date.toLocaleString('zh-CN');
+            } catch {
+                return timestamp;
+            }
+        }
+
+        // HTML转义
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html> 
