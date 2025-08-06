@@ -38,6 +38,16 @@ ERS/
 └── README.md                     # 说明文档
 ```
 
+## 颜色编码
+
+- 🔴 **红色**: 严重警告和关键发现
+- 🟡 **黄色**: 一般警告
+- 🔵 **蓝色**: 信息性内容
+- 🟢 **绿色**: 成功/正常状态
+- 🟣 **紫色**: 模块标题
+- ⚪ **白色**: 普通文本
+
+
 ## 使用方法
 
 ### 1. 运行调查脚本（必须运行，高手可以直接看这个结果即可）
@@ -65,16 +75,6 @@ chmod +x start_web_viewer.sh
 目前效果：
 ![img](_media/13072025.png)
 
-## 虚拟环境管理
-
-Web查看器会自动创建和管理Python虚拟环境：
-
-### 自动功能：
-- ✅ 自动检查Python安装
-- ✅ 自动创建虚拟环境 (`venv/` 目录)
-- ✅ 自动激活虚拟环境
-- ✅ 自动安装Flask依赖
-- ✅ 自动启动Web服务器
 
 ## 调查内容
 
@@ -131,38 +131,6 @@ Web查看器会自动创建和管理Python虚拟环境：
 - 检查临时目录
 - 检查文件权限
 
-## 日志文件
-
-### 主日志文件
-- `incident_response_YYYYMMDD_HHMMSS.log`: 记录所有模块的开始和结束信息
-
-### 模块日志文件
-- `results/user_YYYYMMDD_HHMMSS.log`: 用户调查详细日志
-- `results/process_YYYYMMDD_HHMMSS.log`: 进程调查详细日志
-- `results/network_YYYYMMDD_HHMMSS.log`: 网络调查详细日志
-- `results/command_YYYYMMDD_HHMMSS.log`: 命令调查详细日志
-- `results/startup_YYYYMMDD_HHMMSS.log`: 启动项调查详细日志
-- `results/cron_YYYYMMDD_HHMMSS.log`: 计划任务调查详细日志
-- `results/log_YYYYMMDD_HHMMSS.log`: 日志调查详细日志
-- `results/system_YYYYMMDD_HHMMSS.log`: 系统调查详细日志
-
-### 报告文件
-- `results/summary_YYYYMMDD_HHMMSS.txt`: 调查摘要报告
-- `results/results_index_YYYYMMDD_HHMMSS.txt`: 结果文件索引
-
-### 可疑项目文件
-- `temp/suspicious_processes.txt`: 可疑进程
-- `temp/suspicious_connections.txt`: 可疑连接
-- `temp/suspicious_cron.txt`: 可疑计划任务
-
-## 颜色编码
-
-- 🔴 **红色**: 严重警告和关键发现
-- 🟡 **黄色**: 一般警告
-- 🔵 **蓝色**: 信息性内容
-- 🟢 **绿色**: 成功/正常状态
-- 🟣 **紫色**: 模块标题
-- ⚪ **白色**: 普通文本
 
 ## 注意事项
 
