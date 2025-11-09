@@ -1,194 +1,182 @@
-#!/bin/bash
-
+#!/bin/sh
 # Process Investigation Module
-# Checks for suspicious processes, high CPU usage, hidden processes, and mining processes
+# Checks suspicious processes, high CPU usage, hidden processes, etc.
 
-process_investigation() {
-    print_section "PROCESS INVESTIGATION"
+# SCRIPT_DIR should be set by the calling script
+# If not set, try to determine it
+if [ -z "$SCRIPT_DIR" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)" || SCRIPT_DIR="$(pwd)"
+fi
+
+. "$SCRIPT_DIR/utils/utils.sh"
+. "$SCRIPT_DIR/config.sh"
+
+investigate_processes() {
+    local log_file="$LOG_PROCESS"
     
-    log_message "INFO" "Starting process investigation module" "process"
-    
-    # Check all running processes
-    print_command_info "All Processes Check" "ps -aux" "process"
-    output_and_log "=== All Running Processes ===" "process"
-    output_and_log "USER\tPID\t%CPU\t%MEM\tVSZ\tRSS\tTTY\tSTAT\tSTART\tTIME\tCOMMAND" "process" "INFO"
-    output_and_log "----\t---\t-----\t-----\t---\t---\t---\t----\t-----\t----\t-------" "process" "INFO"
-    ps -aux | head -20 | while read line; do
-        output_and_log "$line" "process" "INFO"
-    done
-    echo ""
-    
-    # Check for high CPU usage processes
-    print_command_info "High CPU Usage Check" "ps -aux --sort=-%cpu | head -10" "process"
-    output_and_log "=== High CPU Usage Processes (Top 10) ===" "process"
-    output_and_log "WARNING: High CPU usage processes:" "process" "WARNING"
-    ps -aux --sort=-%cpu | head -10 | while read line; do
-        output_and_log "  $line" "process" "WARNING"
-    done
-    echo ""
-    
-    # Check for high memory usage processes
-    print_command_info "High Memory Usage Check" "ps -aux --sort=-%mem | head -10" "process"
-    output_and_log "=== High Memory Usage Processes (Top 10) ===" "process"
-    output_and_log "WARNING: High memory usage processes:" "process" "WARNING"
-    ps -aux --sort=-%mem | head -10 | while read line; do
-        output_and_log "  $line" "process" "WARNING"
-    done
-    echo ""
-    
-    # Check for suspicious mining processes
-    print_command_info "Mining Processes Check" "ps -aux | grep -i 'miner\|xmr\|monero\|bitcoin\|eth\|gpu\|cpu'" "process"
-    output_and_log "=== Suspicious Mining Processes ===" "process"
-    local mining_processes=$(ps -aux | grep -i 'miner\|xmr\|monero\|bitcoin\|eth\|gpu\|cpu' | grep -v grep)
-    if [[ -n "$mining_processes" ]]; then
-        output_and_log "CRITICAL: Mining processes found:" "process" "CRITICAL"
-        echo "$mining_processes" | while read line; do
-            output_and_log "  - $line" "process" "CRITICAL"
-        done
-        echo "$mining_processes" > "$TEMP_DIR/suspicious_processes.txt"
-    else
-        output_and_log "No mining processes found" "process" "SUCCESS"
+    # Check if log file path is set
+    if [ -z "$log_file" ]; then
+        print_error "LOG_PROCESS is not set. Cannot create log file."
+        return 1
     fi
-    echo ""
     
-    # Check for processes with unusual names
-    print_command_info "Unusual Process Names Check" "ps -aux | grep -E '[0-9a-f]{32}|[a-z]{1,2}[0-9]{1,2}'" "process"
-    output_and_log "=== Processes with Unusual Names ===" "process"
-    local unusual_processes=$(ps -aux | grep -E '[0-9a-f]{32}|[a-z]{1,2}[0-9]{1,2}' | grep -v grep)
-    if [[ -n "$unusual_processes" ]]; then
-        output_and_log "WARNING: Processes with unusual names found:" "process" "WARNING"
-        echo "$unusual_processes" | while read line; do
-            output_and_log "  - $line" "process" "WARNING"
-        done
-    else
-        output_and_log "No processes with unusual names found" "process" "SUCCESS"
-    fi
-    echo ""
+    # Initialize log file with header
+    {
+        echo "=========================================="
+        echo "Process Investigation Module"
+        echo "Started: $(get_date)"
+        echo "=========================================="
+        echo ""
+    } > "$log_file" 2>/dev/null || {
+        print_error "Failed to create log file: $log_file"
+        return 1
+    }
     
-    # Check for processes running from unusual locations
-    print_command_info "Unusual Process Locations Check" "ps -aux | grep -v '/usr/bin\|/usr/sbin\|/bin\|/sbin'" "process"
-    output_and_log "=== Processes Running from Unusual Locations ===" "process"
-    local unusual_locations=$(ps -aux | grep -v '/usr/bin\|/usr/sbin\|/bin\|/sbin' | grep -v 'grep\|ps' | head -10)
-    if [[ -n "$unusual_locations" ]]; then
-        output_and_log "WARNING: Processes running from unusual locations:" "process" "WARNING"
-        echo "$unusual_locations" | while read line; do
-            output_and_log "  - $line" "process" "WARNING"
-        done
-    else
-        output_and_log "No processes running from unusual locations found" "process" "SUCCESS"
+    print_section "Process Investigation Module"
+    
+    # Check all processes
+    if should_investigate "minimal"; then
+        if bb which ps >/dev/null 2>&1; then
+            execute_and_log "Check all processes (ps aux)" \
+                "ps aux 2>/dev/null | bb head -100" \
+                "$log_file" "minimal"
+        else
+            execute_and_log "Check processes from /proc" \
+                "bb ls -d /proc/[0-9]* 2>/dev/null | bb head -50" \
+                "$log_file" "minimal"
+        fi
     fi
-    echo ""
+    
+    # Check processes sorted by CPU usage
+    if should_investigate "normal"; then
+        if bb which ps >/dev/null 2>&1; then
+            execute_and_log "Check top CPU consuming processes" \
+                "ps aux 2>/dev/null | bb sort -k3 -rn | bb head -20" \
+                "$log_file" "normal"
+        fi
+    fi
+    
+    # Check processes sorted by memory usage
+    if should_investigate "normal"; then
+        if bb which ps >/dev/null 2>&1; then
+            execute_and_log "Check top memory consuming processes" \
+                "ps aux 2>/dev/null | bb sort -k4 -rn | bb head -20" \
+                "$log_file" "normal"
+        fi
+    fi
     
     # Check process tree
-    print_command_info "Process Tree Check" "pstree -asp" "process"
-    output_and_log "=== Process Tree ===" "process"
-    pstree -asp | head -20 | while read line; do
-        output_and_log "$line" "process" "INFO"
-    done
-    echo ""
+    if should_investigate "normal"; then
+        if bb which pstree >/dev/null 2>&1; then
+            execute_and_log "Check process tree" \
+                "pstree -asp 2>/dev/null | bb head -100" \
+                "$log_file" "normal"
+        fi
+    fi
     
-    # Check for hidden processes using unhide
-    print_command_info "Hidden Processes Check" "unhide proc" "process"
-    output_and_log "=== Hidden Processes Detection ===" "process"
-    if command -v unhide >/dev/null 2>&1; then
-        output_and_log "Running unhide to detect hidden processes..." "process" "INFO"
-        local hidden_processes=$(unhide proc 2>&1)
-        if [[ -n "$hidden_processes" ]]; then
-            output_and_log "CRITICAL: Hidden processes detected:" "process" "CRITICAL"
-            echo "$hidden_processes" | while read line; do
-                output_and_log "  - $line" "process" "CRITICAL"
+    # Check for suspicious process names
+    if should_investigate "normal"; then
+        local suspicious_patterns="miner xmrig ccminer cpuminer minerd"
+        if bb which ps >/dev/null 2>&1; then
+            for pattern in $suspicious_patterns; do
+                execute_and_log "Check for processes matching pattern: $pattern" \
+                    "ps aux 2>/dev/null | bb grep -i $pattern | bb grep -v grep || echo 'No processes found'" \
+                    "$log_file" "normal"
             done
-        else
-            output_and_log "No hidden processes detected" "process" "SUCCESS"
-        fi
-    else
-        output_and_log "Installing unhide for hidden process detection..." "process" "WARNING"
-        apt update && apt install -y unhide
-        if command -v unhide >/dev/null 2>&1; then
-            output_and_log "Running unhide to detect hidden processes..." "process" "INFO"
-            local hidden_processes=$(unhide proc 2>&1)
-            if [[ -n "$hidden_processes" ]]; then
-                output_and_log "CRITICAL: Hidden processes detected:" "process" "CRITICAL"
-                echo "$hidden_processes" | while read line; do
-                    output_and_log "  - $line" "process" "CRITICAL"
-                done
-            else
-                output_and_log "No hidden processes detected" "process" "SUCCESS"
-            fi
-        else
-            output_and_log "Failed to install unhide" "process" "ERROR"
         fi
     fi
-    echo ""
     
-    # Check for processes with network connections
-    print_command_info "Processes with Network Connections" "netstat -anp | grep ESTABLISHED" "process"
-    output_and_log "=== Processes with Network Connections ===" "process"
-    netstat -anp | grep ESTABLISHED | while read line; do
-        output_and_log "$line" "process" "INFO"
-    done
-    echo ""
-    
-    # Check for processes with open files
-    print_command_info "Processes with Open Files" "lsof | head -20" "process"
-    output_and_log "=== Processes with Open Files (Top 20) ===" "process"
-    lsof 2>/dev/null | head -20 | while read line; do
-        output_and_log "$line" "process" "INFO"
-    done
-    echo ""
-    
-    # Check for processes with unusual command line arguments
-    print_command_info "Unusual Command Line Arguments" "ps -ef | grep -E '--config\|--pool\|--wallet\|--worker'" "process"
-    output_and_log "=== Processes with Unusual Command Line Arguments ===" "process"
-    local unusual_args=$(ps -ef | grep -E '--config|--pool|--wallet|--worker' | grep -v grep)
-    if [[ -n "$unusual_args" ]]; then
-        output_and_log "CRITICAL: Processes with suspicious arguments found:" "process" "CRITICAL"
-        echo "$unusual_args" | while read line; do
-            output_and_log "  - $line" "process" "CRITICAL"
-        done
-    else
-        output_and_log "No processes with suspicious arguments found" "process" "SUCCESS"
+    # Check processes with network connections
+    if should_investigate "normal"; then
+        if bb which netstat >/dev/null 2>&1; then
+            execute_and_log "Check processes with network connections" \
+                "bb netstat -anp 2>/dev/null | bb grep ESTAB | bb head -50" \
+                "$log_file" "normal"
+        elif bb which ss >/dev/null 2>&1; then
+            execute_and_log "Check processes with network connections (ss)" \
+                "ss -anp 2>/dev/null | bb grep ESTAB | bb head -50" \
+                "$log_file" "normal"
+        fi
     fi
-    echo ""
     
-    # Check for processes with high priority
-    print_command_info "High Priority Processes" "ps -eo pid,ppid,ni,cmd --sort=-ni | head -10" "process"
-    output_and_log "=== High Priority Processes ===" "process"
-    ps -eo pid,ppid,ni,cmd --sort=-ni | head -10 | while read line; do
-        output_and_log "$line" "process" "INFO"
-    done
-    echo ""
-    
-    # Check for zombie processes
-    print_command_info "Zombie Processes Check" "ps -aux | grep -E 'Z|zombie'" "process"
-    output_and_log "=== Zombie Processes ===" "process"
-    local zombie_processes=$(ps -aux | grep -E 'Z|zombie' | grep -v grep)
-    if [[ -n "$zombie_processes" ]]; then
-        output_and_log "WARNING: Zombie processes found:" "process" "WARNING"
-        echo "$zombie_processes" | while read line; do
-            output_and_log "  - $line" "process" "WARNING"
-        done
-    else
-        output_and_log "No zombie processes found" "process" "SUCCESS"
+    # Check for processes running from suspicious locations
+    if should_investigate "detailed"; then
+        if bb which ps >/dev/null 2>&1; then
+            execute_and_log "Check processes running from /tmp or /var/tmp" \
+                "ps aux 2>/dev/null | bb awk '{print \$11}' | bb grep -E '^/tmp|^/var/tmp' | bb sort -u" \
+                "$log_file" "detailed"
+        fi
     fi
-    echo ""
     
-    # Check for processes with unusual user ownership
-    print_command_info "Unusual User Ownership" "ps -aux | grep -v 'root\|daemon\|bin\|sys\|sync\|games\|man\|lp\|mail\|news\|uucp\|proxy\|www-data\|backup\|list\|irc\|gnats\|nobody\|systemd'" "process"
-    output_and_log "=== Processes with Unusual User Ownership ===" "process"
-    local unusual_users=$(ps -aux | grep -v 'root\|daemon\|bin\|sys\|sync\|games\|man\|lp\|mail\|news\|uucp\|proxy\|www-data\|backup\|list\|irc\|gnats\|nobody\|systemd' | head -10)
-    if [[ -n "$unusual_users" ]]; then
-        output_and_log "WARNING: Processes with unusual user ownership:" "process" "WARNING"
-        echo "$unusual_users" | while read line; do
-            output_and_log "  - $line" "process" "WARNING"
-        done
-    else
-        output_and_log "No processes with unusual user ownership found" "process" "SUCCESS"
+    # Check process command lines
+    if should_investigate "detailed"; then
+        if bb which ps >/dev/null 2>&1; then
+            execute_and_log "Check process command lines (full)" \
+                "ps auxww 2>/dev/null | bb head -50" \
+                "$log_file" "detailed"
+        fi
     fi
+    
+    # Check for processes with suspicious parent processes
+    if should_investigate "detailed"; then
+        if bb which ps >/dev/null 2>&1; then
+            execute_and_log "Check process parent-child relationships" \
+                "ps -ef 2>/dev/null | bb awk '{print \$2, \$3, \$8}' | bb head -50" \
+                "$log_file" "detailed"
+        fi
+    fi
+    
+    # Recommendation to use unhide
+    if should_investigate "detailed"; then
+        print_info "Recommendation: Install and use 'unhide' to detect hidden processes"
+        print_info "Command: apt install unhide && unhide proc"
+        log_to_file "$log_file" "INFO: Recommendation to use unhide for hidden process detection"
+    fi
+    
+    # Check /proc for process information
+    if should_investigate "detailed"; then
+        execute_and_log "Check /proc for process directories" \
+            "bb ls -ld /proc/[0-9]* 2>/dev/null | bb wc -l" \
+            "$log_file" "detailed"
+        
+        local proc_count=$(bb ls -d /proc/[0-9]* 2>/dev/null | bb wc -l)
+        echo "Total processes found: $proc_count"
+    fi
+    
+    # Check for processes with deleted binaries
+    if should_investigate "detailed"; then
+        if bb which lsof >/dev/null 2>&1; then
+            execute_and_log "Check for processes with deleted binaries (lsof)" \
+                "lsof 2>/dev/null | bb grep deleted | bb head -20" \
+                "$log_file" "detailed"
+        fi
+    fi
+    
+    # Summary
+    print_section "Process Investigation Summary"
+    local process_count=0
+    if bb which ps >/dev/null 2>&1; then
+        process_count=$(ps aux 2>/dev/null | bb wc -l)
+    else
+        process_count=$(bb ls -d /proc/[0-9]* 2>/dev/null | bb wc -l)
+    fi
+    
+    echo "Total processes: $process_count"
     echo ""
     
-    log_message "INFO" "Process investigation module completed" "process"
+    log_to_file "$log_file" "SUMMARY: Total processes: $process_count"
+    
+    print_success "Process investigation completed"
 }
 
-# Execute process investigation
-process_investigation 
+# Run if executed directly
+if [ "${0##*/}" = "process_investigation.sh" ]; then
+    if [ -z "$SCRIPT_DIR" ]; then
+        SCRIPT_DIR="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)" || SCRIPT_DIR="$(pwd)"
+    fi
+    export SCRIPT_DIR
+    . "$SCRIPT_DIR/config.sh"
+    set_log_paths "$(get_timestamp)"
+    investigate_processes
+fi
+

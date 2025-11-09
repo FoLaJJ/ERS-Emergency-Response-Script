@@ -1,0 +1,480 @@
+* { 
+    margin: 0; 
+    padding: 0; 
+    box-sizing: border-box; 
+}
+body {
+    font-family: 'Arial', 'Helvetica', sans-serif;
+    background: #f5f7fa;
+    color: #2c3e50;
+    min-height: 100vh;
+    display: flex;
+}
+
+/* Sidebar */
+.sidebar {
+    width: 250px;
+    background: #2c3e50;
+    color: white;
+    padding: 20px 0;
+    position: fixed;
+    height: 100vh;
+    overflow-y: auto;
+    box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+}
+.sidebar-header {
+    padding: 0 20px 20px 20px;
+    border-bottom: 1px solid #34495e;
+    margin-bottom: 20px;
+}
+.sidebar-header h2 {
+    font-size: 1.2em;
+    margin-bottom: 5px;
+}
+.sidebar-header .subtitle {
+    font-size: 0.8em;
+    color: #bdc3c7;
+}
+.nav-menu {
+    list-style: none;
+}
+.nav-item {
+    margin: 5px 0;
+}
+.nav-button {
+    display: block;
+    width: 100%;
+    padding: 12px 20px;
+    color: #ecf0f1;
+    text-decoration: none;
+    border: none;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    font-size: 0.95em;
+    transition: all 0.2s;
+    border-left: 3px solid transparent;
+}
+.nav-button:hover {
+    background: #34495e;
+    border-left-color: #3498db;
+}
+.nav-button.active {
+    background: #34495e;
+    border-left-color: #3498db;
+    font-weight: 600;
+}
+.logout-section {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #34495e;
+}
+.logout-btn {
+    width: calc(100% - 40px);
+    margin: 0 20px;
+    padding: 10px;
+    background: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background 0.2s;
+}
+.logout-btn:hover {
+    background: #c0392b;
+}
+
+/* Main Content */
+.main-content {
+    margin-left: 250px;
+    flex: 1;
+    padding: 30px;
+    max-width: calc(100% - 250px);
+}
+.header {
+    background: white;
+    padding: 20px 30px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+.header h1 {
+    font-size: 1.5em;
+    margin-bottom: 15px;
+}
+.header-info {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+}
+.info-card {
+    background: #f8f9fa;
+    padding: 10px 15px;
+    border-radius: 4px;
+    border-left: 3px solid #3498db;
+}
+.info-card strong {
+    display: block;
+    font-size: 0.85em;
+    color: #7f8c8d;
+    margin-bottom: 5px;
+}
+.info-card span {
+    font-size: 0.95em;
+    color: #2c3e50;
+}
+.password-warning {
+    background: #fff3cd;
+    padding: 12px 15px;
+    border-radius: 4px;
+    margin-top: 15px;
+    border-left: 4px solid #ffc107;
+    font-size: 0.9em;
+    color: #856404;
+}
+
+/* Content Sections */
+.content-section {
+    display: none;
+    background: white;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+.content-section.active {
+    display: block;
+}
+.section-title {
+    font-size: 1.3em;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #e1e8ed;
+}
+
+/* Dashboard */
+.dashboard {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+}
+.dashboard-card {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 6px;
+    border: 1px solid #e1e8ed;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.dashboard-card:hover {
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
+}
+.dashboard-card h3 {
+    font-size: 1.1em;
+    margin-bottom: 10px;
+    color: #2c3e50;
+}
+.dashboard-card .badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.75em;
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+.badge-user { background: #3498db; color: #fff; }
+.badge-command { background: #e74c3c; color: #fff; }
+.badge-network { background: #9b59b6; color: #fff; }
+.badge-process { background: #e67e22; color: #fff; }
+.badge-startup { background: #27ae60; color: #fff; }
+.badge-cron { background: #f39c12; color: #fff; }
+.badge-log { background: #16a085; color: #fff; }
+.badge-system { background: #7f8c8d; color: #fff; }
+.dashboard-card .preview {
+    font-size: 0.85em;
+    color: #7f8c8d;
+    margin-top: 10px;
+    max-height: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Log Content Container */
+.log-content {
+    background: #1e1e1e;
+    border-radius: 8px;
+    border: 1px solid #333;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    max-height: 75vh;
+    position: relative;
+}
+
+/* Log Viewer with line numbers - single scroll container */
+.log-viewer {
+    display: flex;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    font-family: 'Consolas', 'Monaco', 'Courier New', 'Fira Code', monospace;
+    font-size: 13px;
+    line-height: 1.6em;
+    overflow-y: auto;
+    overflow-x: hidden;
+    max-height: 75vh;
+    /* Prevent overscroll - completely disable bounce/elastic scrolling */
+    overscroll-behavior-y: none;
+    overscroll-behavior-x: auto;
+}
+
+/* Wrapper for line numbers and content - must be same height as content */
+.log-viewer-wrapper {
+    display: flex;
+    width: 100%;
+    /* Ensure wrapper aligns items to top */
+    align-items: flex-start;
+    /* Match height with content - both should have same total height */
+    min-height: 100%;
+}
+
+/* Line numbers container - fixed width, no scrolling */
+.log-line-numbers {
+    background: #252526;
+    color: #858585;
+    padding-top: 15px;
+    padding-bottom: 15px;
+    padding-left: 10px;
+    padding-right: 10px;
+    text-align: right;
+    user-select: none;
+    border-right: 1px solid #333;
+    width: 50px;
+    min-width: 50px;
+    max-width: 50px;
+    font-size: 13px;
+    line-height: 1.6em;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    /* No overflow - scroll with parent container */
+    overflow: visible;
+    position: relative;
+}
+
+/* Line number item - exact height match with content lines */
+.log-line-number {
+    display: block;
+    height: 1.6em;
+    line-height: 1.6em;
+    padding: 0;
+    margin: 0;
+    text-align: right;
+    user-select: none;
+    box-sizing: border-box;
+    white-space: nowrap;
+}
+
+/* Log content area - flexible width, no vertical scroll */
+.log-text {
+    flex: 1;
+    padding-top: 15px;
+    padding-bottom: 15px;
+    padding-left: 15px;
+    padding-right: 15px;
+    white-space: pre;
+    overflow-x: auto;
+    overflow-y: visible;
+    tab-size: 4;
+    line-height: 1.6em;
+    box-sizing: border-box;
+    min-width: 0;
+    position: relative;
+    /* Ensure content area matches line numbers height exactly */
+    height: auto;
+}
+
+/* Log line - exact height to match line numbers */
+.log-line {
+    display: block;
+    height: 1.6em;
+    line-height: 1.6em;
+    padding: 0 5px;
+    margin: 0;
+    border-left: 3px solid transparent;
+    transition: background-color 0.2s;
+    box-sizing: border-box;
+    white-space: pre;
+    overflow-x: visible;
+    overflow-y: hidden;
+    /* Prevent text wrapping - content will scroll horizontally if too wide */
+    word-wrap: normal;
+    word-break: keep-all;
+    /* Ensure consistent height - every line must be exactly 1.6em */
+    min-height: 1.6em;
+    max-height: 1.6em;
+}
+
+.log-line:hover {
+    background: #2a2d2e;
+    border-left-color: #007acc;
+}
+
+/* Syntax highlighting for common log patterns */
+.log-line .log-error {
+    color: #f48771;
+    font-weight: 600;
+}
+
+.log-line .log-warning {
+    color: #cca700;
+    font-weight: 500;
+}
+
+.log-line .log-info {
+    color: #4ec9b0;
+}
+
+.log-line .log-success {
+    color: #89d185;
+}
+
+.log-line .log-timestamp {
+    color: #608b4e;
+}
+
+.log-line .log-ip {
+    color: #4fc1ff;
+}
+
+.log-line .log-path {
+    color: #ce9178;
+}
+
+.log-line .log-number {
+    color: #b5cea8;
+}
+
+/* Selected line highlight */
+.log-line.selected {
+    background: #094771;
+    border-left-color: #007acc;
+}
+
+/* Scrollbar styling for dark theme */
+.log-viewer::-webkit-scrollbar {
+    width: 12px;
+}
+
+.log-viewer::-webkit-scrollbar-track {
+    background: #1e1e1e;
+}
+
+.log-viewer::-webkit-scrollbar-thumb {
+    background: #424242;
+    border-radius: 6px;
+    border: 2px solid #1e1e1e;
+}
+
+.log-viewer::-webkit-scrollbar-thumb:hover {
+    background: #4e4e4e;
+}
+
+.log-viewer::-webkit-scrollbar-corner {
+    background: #1e1e1e;
+}
+
+/* Horizontal scrollbar for log text (when content is too wide) */
+.log-text::-webkit-scrollbar {
+    height: 8px;
+}
+
+.log-text::-webkit-scrollbar-track {
+    background: #1e1e1e;
+}
+
+.log-text::-webkit-scrollbar-thumb {
+    background: #424242;
+    border-radius: 4px;
+}
+
+.log-text::-webkit-scrollbar-thumb:hover {
+    background: #4e4e4e;
+}
+
+.log-content::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+
+.log-content::-webkit-scrollbar-track {
+    background: #1e1e1e;
+}
+
+.log-content::-webkit-scrollbar-thumb {
+    background: #424242;
+    border-radius: 6px;
+    border: 2px solid #1e1e1e;
+}
+
+.log-content::-webkit-scrollbar-thumb:hover {
+    background: #4e4e4e;
+}
+
+/* Log header toolbar */
+.log-toolbar {
+    background: #252526;
+    border-bottom: 1px solid #333;
+    padding: 8px 15px;
+    display: flex;
+    align-items: center;
+    color: #cccccc;
+    font-size: 12px;
+}
+
+.log-toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+/* Removed .log-toolbar-right and .log-toggle styles - toggle line numbers feature removed */
+
+
+.log-empty {
+    color: #858585;
+    font-style: italic;
+    text-align: center;
+    padding: 60px 40px;
+    background: #1e1e1e;
+    border-radius: 8px;
+}
+
+/* Loading animation */
+.log-loading {
+    color: #4ec9b0;
+    text-align: center;
+    padding: 60px 40px;
+    background: #1e1e1e;
+    border-radius: 8px;
+}
+
+.log-loading::after {
+    content: '...';
+    animation: dots 1.5s steps(4, end) infinite;
+}
+
+@keyframes dots {
+    0%, 20% { content: '.'; }
+    40% { content: '..'; }
+    60%, 100% { content: '...'; }
+}
+
+.footer {
+    text-align: center;
+    margin-top: 30px;
+    padding-top: 20px;
+    border-top: 1px solid #e1e8ed;
+    color: #95a5a6;
+    font-size: 0.85em;
+}
+

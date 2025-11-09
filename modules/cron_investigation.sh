@@ -1,208 +1,202 @@
-#!/bin/bash
-
+#!/bin/sh
 # Cron Investigation Module
-# Checks for suspicious cron jobs, scheduled tasks, and automated scripts
+# Checks cron jobs, at jobs, anacron, etc.
 
-cron_investigation() {
-    print_section "CRON INVESTIGATION"
+# SCRIPT_DIR should be set by the calling script
+# If not set, try to determine it
+if [ -z "$SCRIPT_DIR" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)" || SCRIPT_DIR="$(pwd)"
+fi
+
+. "$SCRIPT_DIR/utils/utils.sh"
+. "$SCRIPT_DIR/config.sh"
+
+investigate_cron() {
+    local log_file="$LOG_CRON"
     
-    log_message "INFO" "Starting cron investigation module" "cron"
-    
-    # Check system cron jobs
-    print_command_info "System Cron Jobs Check" "crontab -l" "cron"
-    output_and_log "=== System Cron Jobs ===" "cron"
-    if crontab -l 2>/dev/null | grep -v '^#' | grep -v '^$'; then
-        crontab -l | while read line; do
-            output_and_log "$line" "cron" "INFO"
-        done
-    else
-        output_and_log "No system cron jobs found" "cron" "SUCCESS"
+    # Check if log file path is set
+    if [ -z "$log_file" ]; then
+        print_error "LOG_CRON is not set. Cannot create log file."
+        return 1
     fi
-    echo ""
     
-    # Check user cron jobs
-    print_command_info "User Cron Jobs Check" "crontab -u root -l" "cron"
-    output_and_log "=== Root User Cron Jobs ===" "cron"
-    if crontab -u root -l 2>/dev/null | grep -v '^#' | grep -v '^$'; then
-        crontab -u root -l | while read line; do
-            output_and_log "$line" "cron" "INFO"
-        done
-    else
-        output_and_log "No root cron jobs found" "cron" "SUCCESS"
-    fi
-    echo ""
-    
-    # Check for suspicious cron jobs
-    print_command_info "Suspicious Cron Jobs Check" "crontab -l | grep -i 'miner\|xmr\|monero\|bitcoin\|eth\|gpu\|cpu\|wget\|curl'" "cron"
-    output_and_log "=== Suspicious Cron Jobs ===" "cron"
-    local suspicious_cron=$(crontab -l 2>/dev/null | grep -i 'miner\|xmr\|monero\|bitcoin\|eth\|gpu\|cpu\|wget\|curl')
-    if [[ -n "$suspicious_cron" ]]; then
-        output_and_log "CRITICAL: Suspicious cron jobs found:" "cron" "CRITICAL"
-        echo "$suspicious_cron" | while read line; do
-            output_and_log "  - $line" "cron" "CRITICAL"
-        done
-        echo "$suspicious_cron" > "$TEMP_DIR/suspicious_cron.txt"
-    else
-        output_and_log "No suspicious cron jobs found" "cron" "SUCCESS"
-    fi
-    echo ""
-    
-    # Check system cron directories
-    print_command_info "System Cron Directories Check" "ls -la /etc/cron.*/" "cron"
-    output_and_log "=== System Cron Directories ===" "cron"
-    for dir in /etc/cron.d/ /etc/cron.daily/ /etc/cron.hourly/ /etc/cron.monthly/ /etc/cron.weekly/; do
-        if [[ -d "$dir" ]]; then
-            output_and_log "Directory: $dir" "cron" "INFO"
-            ls -la "$dir" | while read line; do
-                output_and_log "  $line" "cron" "INFO"
-            done
-            echo ""
-        fi
-    done
-    
-    # Check for suspicious files in cron directories
-    print_command_info "Suspicious Files in Cron Directories Check" "find /etc/cron.*/ -type f -exec grep -l -i 'miner\|xmr\|monero\|bitcoin\|eth\|gpu\|cpu' {} \;" "cron"
-    output_and_log "=== Suspicious Files in Cron Directories ===" "cron"
-    local suspicious_cron_files=$(find /etc/cron.*/ -type f -exec grep -l -i 'miner\|xmr\|monero\|bitcoin\|eth\|gpu\|cpu' {} \; 2>/dev/null)
-    if [[ -n "$suspicious_cron_files" ]]; then
-        output_and_log "CRITICAL: Suspicious files in cron directories found:" "cron" "CRITICAL"
-        echo "$suspicious_cron_files" | while read file; do
-            output_and_log "  - $file" "cron" "CRITICAL"
-            output_and_log "Content:" "cron" "INFO"
-            cat "$file" | while read line; do
-                output_and_log "    $line" "cron" "INFO"
-            done
-            echo ""
-        done
-    else
-        output_and_log "No suspicious files in cron directories found" "cron" "SUCCESS"
-    fi
-    echo ""
-    
-    # Check for recently modified cron files
-    print_command_info "Recently Modified Cron Files Check" "find /etc/cron.*/ -mtime -7 -type f" "cron"
-    output_and_log "=== Recently Modified Cron Files (Last 7 Days) ===" "cron"
-    local recent_cron_files=$(find /etc/cron.*/ -mtime -7 -type f 2>/dev/null)
-    if [[ -n "$recent_cron_files" ]]; then
-        output_and_log "WARNING: Recently modified cron files found:" "cron" "WARNING"
-        echo "$recent_cron_files" | while read file; do
-            local file_info=$(ls -la "$file" 2>/dev/null)
-            output_and_log "  - $file_info" "cron" "WARNING"
-        done
-    else
-        output_and_log "No recently modified cron files found" "cron" "SUCCESS"
-    fi
-    echo ""
-    
-    # Check for cron jobs with unusual permissions
-    print_command_info "Unusual Cron File Permissions Check" "find /etc/cron.*/ -perm -o+w -type f" "cron"
-    output_and_log "=== Cron Files with Unusual Permissions ===" "cron"
-    local unusual_cron_perms=$(find /etc/cron.*/ -perm -o+w -type f 2>/dev/null)
-    if [[ -n "$unusual_cron_perms" ]]; then
-        output_and_log "CRITICAL: Cron files with unusual permissions found:" "cron" "CRITICAL"
-        echo "$unusual_cron_perms" | while read file; do
-            local file_info=$(ls -la "$file" 2>/dev/null)
-            output_and_log "  - $file_info" "cron" "CRITICAL"
-        done
-    else
-        output_and_log "No cron files with unusual permissions found" "cron" "SUCCESS"
-    fi
-    echo ""
-    
-    # Check for hidden cron jobs
-    print_command_info "Hidden Cron Jobs Check" "find /etc/cron.*/ -name '.*' -type f" "cron"
-    output_and_log "=== Hidden Cron Files ===" "cron"
-    local hidden_cron_files=$(find /etc/cron.*/ -name '.*' -type f 2>/dev/null)
-    if [[ -n "$hidden_cron_files" ]]; then
-        output_and_log "WARNING: Hidden cron files found:" "cron" "WARNING"
-        echo "$hidden_cron_files" | while read file; do
-            local file_info=$(ls -la "$file" 2>/dev/null)
-            output_and_log "  - $file_info" "cron" "WARNING"
-        done
-    else
-        output_and_log "No hidden cron files found" "cron" "SUCCESS"
-    fi
-    echo ""
-    
-    # Check for cron jobs in user directories
-    print_command_info "User Cron Jobs Check" "find /home -name 'crontab' -type f" "cron"
-    output_and_log "=== User Cron Jobs ===" "cron"
-    find /home -name "crontab" -type f 2>/dev/null | while read file; do
-        local owner=$(stat -c '%U' "$file" 2>/dev/null)
-        output_and_log "User cron file: $file (Owner: $owner)" "cron" "INFO"
-        if [[ -s "$file" ]]; then
-            output_and_log "Content:" "cron" "INFO"
-            cat "$file" | while read line; do
-                output_and_log "  $line" "cron" "INFO"
-            done
-        fi
+    # Initialize log file with header
+    {
+        echo "=========================================="
+        echo "Cron Investigation Module"
+        echo "Started: $(get_date)"
+        echo "=========================================="
         echo ""
-    done
+    } > "$log_file" 2>/dev/null || {
+        print_error "Failed to create log file: $log_file"
+        return 1
+    }
     
-    # Check for cron jobs in root directory
-    print_command_info "Root Cron Jobs Check" "find /root -name 'crontab' -type f" "cron"
-    output_and_log "=== Root Cron Jobs ===" "cron"
-    find /root -name "crontab" -type f 2>/dev/null | while read file; do
-        output_and_log "Root cron file: $file" "cron" "INFO"
-        if [[ -s "$file" ]]; then
-            output_and_log "Content:" "cron" "INFO"
-            cat "$file" | while read line; do
-                output_and_log "  $line" "cron" "INFO"
+    print_section "Cron Investigation Module"
+    
+    # Check system crontab
+    if should_investigate "minimal"; then
+        if [ -f /etc/crontab ]; then
+            execute_and_log "Check /etc/crontab" \
+                "bb cat /etc/crontab" \
+                "$log_file" "minimal"
+        fi
+    fi
+    
+    # Check cron.d directory
+    if should_investigate "minimal"; then
+        if [ -d /etc/cron.d ]; then
+            execute_and_log "Check /etc/cron.d directory" \
+                "bb ls -la /etc/cron.d/ 2>/dev/null" \
+                "$log_file" "minimal"
+            
+            for file in /etc/cron.d/*; do
+                if [ -f "$file" ]; then
+                    execute_and_log "Check cron.d file: $file" \
+                        "bb cat $file" \
+                        "$log_file" "minimal"
+                fi
             done
         fi
-        echo ""
-    done
-    
-    # Check for at jobs
-    print_command_info "At Jobs Check" "atq" "cron"
-    output_and_log "=== At Jobs ===" "cron"
-    local at_jobs=$(atq 2>/dev/null)
-    if [[ -n "$at_jobs" ]]; then
-        output_and_log "WARNING: At jobs found:" "cron" "WARNING"
-        echo "$at_jobs" | while read line; do
-            output_and_log "  - $line" "cron" "WARNING"
-        done
-    else
-        output_and_log "No at jobs found" "cron" "SUCCESS"
     fi
-    echo ""
     
-    # Check for anacron jobs
-    print_command_info "Anacron Jobs Check" "cat /etc/anacrontab" "cron"
-    output_and_log "=== Anacron Jobs ===" "cron"
-    if [[ -f /etc/anacrontab ]]; then
-        cat /etc/anacrontab | while read line; do
-            output_and_log "$line" "cron" "INFO"
-        done
-    else
-        output_and_log "No anacrontab file found" "cron" "SUCCESS"
+    # Check cron hourly
+    if should_investigate "normal"; then
+        if [ -d /etc/cron.hourly ]; then
+            execute_and_log "Check /etc/cron.hourly directory" \
+                "bb ls -la /etc/cron.hourly/ 2>/dev/null" \
+                "$log_file" "normal"
+        fi
     fi
-    echo ""
     
-    # Check for systemd timers
-    print_command_info "Systemd Timers Check" "systemctl list-timers" "cron"
-    output_and_log "=== Systemd Timers ===" "cron"
-    systemctl list-timers | while read line; do
-        output_and_log "$line" "cron" "INFO"
-    done
-    echo ""
-    
-    # Check for suspicious systemd timers
-    print_command_info "Suspicious Systemd Timers Check" "systemctl list-timers | grep -i 'miner\|xmr\|monero\|bitcoin\|eth\|gpu\|cpu'" "cron"
-    output_and_log "=== Suspicious Systemd Timers ===" "cron"
-    local suspicious_timers=$(systemctl list-timers | grep -i 'miner\|xmr\|monero\|bitcoin\|eth\|gpu\|cpu')
-    if [[ -n "$suspicious_timers" ]]; then
-        output_and_log "CRITICAL: Suspicious systemd timers found:" "cron" "CRITICAL"
-        echo "$suspicious_timers" | while read line; do
-            output_and_log "  - $line" "cron" "CRITICAL"
-        done
-    else
-        output_and_log "No suspicious systemd timers found" "cron" "SUCCESS"
+    # Check cron daily
+    if should_investigate "normal"; then
+        if [ -d /etc/cron.daily ]; then
+            execute_and_log "Check /etc/cron.daily directory" \
+                "bb ls -la /etc/cron.daily/ 2>/dev/null" \
+                "$log_file" "normal"
+        fi
     fi
+    
+    # Check cron weekly
+    if should_investigate "normal"; then
+        if [ -d /etc/cron.weekly ]; then
+            execute_and_log "Check /etc/cron.weekly directory" \
+                "bb ls -la /etc/cron.weekly/ 2>/dev/null" \
+                "$log_file" "normal"
+        fi
+    fi
+    
+    # Check cron monthly
+    if should_investigate "normal"; then
+        if [ -d /etc/cron.monthly ]; then
+            execute_and_log "Check /etc/cron.monthly directory" \
+                "bb ls -la /etc/cron.monthly/ 2>/dev/null" \
+                "$log_file" "normal"
+        fi
+    fi
+    
+    # Check user crontabs
+    if should_investigate "normal"; then
+        if bb which crontab >/dev/null 2>&1; then
+            execute_and_log "Check root crontab" \
+                "crontab -l -u root 2>/dev/null || echo 'No root crontab or permission denied'" \
+                "$log_file" "normal"
+            
+            # Check crontabs for all users with home directories
+            for user in $(bb cat /etc/passwd | bb awk -F: '{print $1}'); do
+                if [ -d "/home/$user" ] || [ "$user" = "root" ]; then
+                    execute_and_log "Check crontab for user: $user" \
+                        "crontab -l -u $user 2>/dev/null || echo 'No crontab for $user'" \
+                        "$log_file" "normal"
+                fi
+            done
+        fi
+    fi
+    
+    # Check /var/spool/cron
+    if should_investigate "normal"; then
+        if [ -d /var/spool/cron ]; then
+            execute_and_log "Check /var/spool/cron directory" \
+                "bb ls -la /var/spool/cron/ 2>/dev/null" \
+                "$log_file" "normal"
+            
+            for file in /var/spool/cron/*; do
+                if [ -f "$file" ]; then
+                    execute_and_log "Check crontab file: $file" \
+                        "bb cat $file" \
+                        "$log_file" "normal"
+                fi
+            done
+        fi
+    fi
+    
+    # Check /var/spool/cron/crontabs
+    if should_investigate "normal"; then
+        if [ -d /var/spool/cron/crontabs ]; then
+            execute_and_log "Check /var/spool/cron/crontabs directory" \
+                "bb ls -la /var/spool/cron/crontabs/ 2>/dev/null" \
+                "$log_file" "normal"
+        fi
+    fi
+    
+    # Check at jobs
+    if should_investigate "detailed"; then
+        if [ -d /var/spool/at ]; then
+            execute_and_log "Check at jobs directory" \
+                "bb ls -la /var/spool/at/ 2>/dev/null" \
+                "$log_file" "detailed"
+        fi
+        
+        if bb which atq >/dev/null 2>&1; then
+            execute_and_log "Check pending at jobs" \
+                "atq 2>/dev/null || echo 'No at jobs or permission denied'" \
+                "$log_file" "detailed"
+        fi
+    fi
+    
+    # Check anacron
+    if should_investigate "detailed"; then
+        if [ -f /etc/anacrontab ]; then
+            execute_and_log "Check /etc/anacrontab" \
+                "bb cat /etc/anacrontab" \
+                "$log_file" "detailed"
+        fi
+    fi
+    
+    # Check for suspicious cron entries
+    if should_investigate "detailed"; then
+        local suspicious_patterns="wget curl bash sh /tmp /var/tmp"
+        for pattern in $suspicious_patterns; do
+            execute_and_log "Check for suspicious cron entries containing: $pattern" \
+                "bb find /etc/cron* /var/spool/cron* -type f -exec bb grep -l $pattern {} \; 2>/dev/null || echo 'No matches found'" \
+                "$log_file" "detailed"
+        done
+    fi
+    
+    # Summary
+    print_section "Cron Investigation Summary"
+    local cron_file_count=0
+    if [ -d /etc/cron.d ]; then
+        cron_file_count=$(bb ls /etc/cron.d/ 2>/dev/null | bb wc -l)
+    fi
+    
+    echo "Cron configuration files in /etc/cron.d: $cron_file_count"
     echo ""
     
-    log_message "INFO" "Cron investigation module completed" "cron"
+    log_to_file "$log_file" "SUMMARY: Cron files in /etc/cron.d: $cron_file_count"
+    
+    print_success "Cron investigation completed"
 }
 
-# Execute cron investigation
-cron_investigation 
+# Run if executed directly
+if [ "${0##*/}" = "cron_investigation.sh" ]; then
+    if [ -z "$SCRIPT_DIR" ]; then
+        SCRIPT_DIR="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)" || SCRIPT_DIR="$(pwd)"
+    fi
+    export SCRIPT_DIR
+    . "$SCRIPT_DIR/config.sh"
+    set_log_paths "$(get_timestamp)"
+    investigate_cron
+fi
+

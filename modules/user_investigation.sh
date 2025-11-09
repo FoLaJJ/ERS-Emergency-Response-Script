@@ -1,141 +1,175 @@
-#!/bin/bash
-
+#!/bin/sh
 # User Investigation Module
-# Checks for suspicious users, shadow users, SSH keys, and privilege escalation
+# Checks user information, shadow users, SSH keys, etc.
 
-user_investigation() {
-    print_section "USER INVESTIGATION"
+# SCRIPT_DIR should be set by the calling script
+# If not set, try to determine it
+if [ -z "$SCRIPT_DIR" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)" || SCRIPT_DIR="$(pwd)"
+fi
+
+. "$SCRIPT_DIR/utils/utils.sh"
+. "$SCRIPT_DIR/config.sh"
+
+investigate_users() {
+    local log_file="$LOG_USER"
     
-    log_message "INFO" "Starting user investigation module" "user"
+    # Check if log file path is set
+    if [ -z "$log_file" ]; then
+        print_error "LOG_USER is not set. Cannot create log file."
+        print_error "Please ensure set_log_paths() was called before running this module."
+        print_error "DEBUG: LOG_USER='$LOG_USER', RESULTS_DIR='$RESULTS_DIR'"
+        return 1
+    fi
     
-    # Check all users in /etc/passwd
-    print_command_info "User Information Check" "cat /etc/passwd" "user"
-    output_and_log "=== All Users in /etc/passwd ===" "user"
-    cat /etc/passwd | while IFS=: read -r username password uid gid info home shell; do
-        output_and_log "User: $username UID: $uid Shell: $shell" "user" "INFO"
-    done
-    echo ""
+    # Initialize log file with header
+    {
+        echo "=========================================="
+        echo "User Investigation Module"
+        echo "Started: $(get_date)"
+        echo "=========================================="
+        echo ""
+    } > "$log_file" 2>/dev/null || {
+        print_error "Failed to create log file: $log_file"
+        return 1
+    }
+    
+    print_section "User Investigation Module"
+    
+    # Check /etc/passwd
+    if should_investigate "minimal"; then
+        execute_and_log "Check all users in /etc/passwd" \
+            "bb cat /etc/passwd" \
+            "$log_file" "minimal"
+    fi
     
     # Check users with login shells (excluding nologin and false)
-    print_command_info "Login Users Check" "cat /etc/passwd | grep -v 'nologin\|false'" "user"
-    output_and_log "=== Users with Login Shells ===" "user"
-    cat /etc/passwd | grep -v 'nologin\|false' | while IFS=: read -r username password uid gid info home shell; do
-        output_and_log "Login User: $username UID: $uid Shell: $shell" "user" "WARNING"
-    done
-    echo ""
-    
-    # Check for users with UID 0 (root privileges)
-    print_command_info "Root Privilege Users Check" "cat /etc/passwd | awk -F: '\$3==0 {print \$1}'" "user"
-    output_and_log "=== Users with UID 0 (Root Privileges) ===" "user"
-    local root_users=$(cat /etc/passwd | awk -F: '$3==0 {print $1}')
-    if [[ -n "$root_users" ]]; then
-        output_and_log "CRITICAL: Users with root privileges found:" "user" "CRITICAL"
-        echo "$root_users" | while read user; do
-            output_and_log "  - $user" "user" "CRITICAL"
-        done
-        echo "$root_users" > "$TEMP_DIR/suspicious_users.txt"
-    else
-        output_and_log "No additional users with root privileges found" "user" "SUCCESS"
+    if should_investigate "normal"; then
+        execute_and_log "Check users with login shells" \
+            "bb cat /etc/passwd | bb grep -v 'nologin\|false'" \
+            "$log_file" "normal"
     fi
-    echo ""
     
-    # Check for recent user creation
-    print_command_info "Recent User Creation Check" "ls -l /home" "user"
-    output_and_log "=== Recent User Home Directories ===" "user"
-    ls -l /home 2>/dev/null | while read line; do
-        output_and_log "$line" "user" "INFO"
-    done
-    echo ""
-    
-    # Check SSH authorized keys
-    print_command_info "SSH Authorized Keys Check" "find /home -name authorized_keys -type f" "user"
-    output_and_log "=== SSH Authorized Keys Found ===" "user"
-    find /home -name "authorized_keys" -type f 2>/dev/null | while read keyfile; do
-        local owner=$(stat -c '%U' "$keyfile" 2>/dev/null)
-        output_and_log "SSH Key File: $keyfile Owner: $owner" "user" "WARNING"
-        if [[ -s "$keyfile" ]]; then
-            output_and_log "Content:" "user" "INFO"
-            cat "$keyfile" | while read line; do
-                output_and_log "  $line" "user" "INFO"
-            done
+    # Check users with UID 0 (root users)
+    if should_investigate "minimal"; then
+        execute_and_log "Check users with UID 0 (root privileges)" \
+            "bb cat /etc/passwd | bb awk -F: '\$3==0 {print \$1}'" \
+            "$log_file" "minimal"
+        
+        local root_users=$(bb cat /etc/passwd | bb awk -F: '$3==0 {print $1}')
+        if [ -n "$root_users" ]; then
+            print_warning "Found users with UID 0: $root_users"
+            log_to_file "$log_file" "WARNING: Users with UID 0 found: $root_users"
         fi
-        echo ""
-    done
+    fi
     
-    # Check root SSH keys
-    if [[ -f /root/.ssh/authorized_keys ]]; then
-        print_command_info "Root SSH Keys Check" "cat /root/.ssh/authorized_keys" "user"
-        output_and_log "=== Root SSH Authorized Keys ===" "user"
-        if [[ -s /root/.ssh/authorized_keys ]]; then
-            output_and_log "CRITICAL: Root SSH keys found:" "user" "CRITICAL"
-            cat /root/.ssh/authorized_keys | while read line; do
-                output_and_log "  $line" "user" "CRITICAL"
-            done
+    # Check /etc/shadow (if accessible)
+    if should_investigate "normal"; then
+        if [ -r /etc/shadow ]; then
+            execute_and_log "Check shadow file (password hashes)" \
+                "bb cat /etc/shadow" \
+                "$log_file" "normal"
         else
-            output_and_log "Root SSH authorized_keys file is empty" "user" "SUCCESS"
+            print_warning "Cannot read /etc/shadow (requires root privileges)"
+            log_to_file "$log_file" "WARNING: Cannot read /etc/shadow"
         fi
-        echo ""
     fi
     
-    # Check for users with empty passwords
-    print_command_info "Empty Password Users Check" "cat /etc/shadow | awk -F: '\$2==\"\" {print \$1}'" "user"
-    output_and_log "=== Users with Empty Passwords ===" "user"
-    local empty_pass_users=$(cat /etc/shadow | awk -F: '$2=="" {print $1}' 2>/dev/null)
-    if [[ -n "$empty_pass_users" ]]; then
-        output_and_log "CRITICAL: Users with empty passwords found:" "user" "CRITICAL"
-        echo "$empty_pass_users" | while read user; do
-            output_and_log "  - $user" "user" "CRITICAL"
-        done
-        echo "$empty_pass_users" >> "$TEMP_DIR/suspicious_users.txt"
-    else
-        output_and_log "No users with empty passwords found" "user" "SUCCESS"
+    # Check recently created users
+    if should_investigate "detailed"; then
+        execute_and_log "Check recently modified users (last 30 days)" \
+            "bb find /home -type d -mtime -30 -exec bb ls -ld {} \; 2>/dev/null | bb head -20" \
+            "$log_file" "detailed"
     fi
+    
+    # Check SSH authorized_keys for root
+    if should_investigate "minimal"; then
+        if [ -f /root/.ssh/authorized_keys ]; then
+            execute_and_log "Check root SSH authorized_keys" \
+                "bb cat /root/.ssh/authorized_keys" \
+                "$log_file" "minimal"
+            print_warning "SSH keys found in /root/.ssh/authorized_keys"
+        else
+            print_info "No authorized_keys found in /root/.ssh/"
+            log_to_file "$log_file" "INFO: No authorized_keys in /root/.ssh/"
+        fi
+    fi
+    
+    # Check SSH authorized_keys for all users
+    if should_investigate "normal"; then
+        execute_and_log "Check SSH authorized_keys for all users" \
+            "bb find /home -name authorized_keys -type f 2>/dev/null -exec bb sh -c 'echo \"User: \$(dirname {} | bb xargs dirname | bb xargs basename)\"; bb cat {}; echo \"---\"' \;" \
+            "$log_file" "normal"
+    fi
+    
+    # Check users with no password (empty password field in shadow)
+    if should_investigate "normal"; then
+        if [ -r /etc/shadow ]; then
+            execute_and_log "Check users with empty passwords" \
+                "bb awk -F: '\$2==\"\" {print \$1}' /etc/shadow" \
+                "$log_file" "normal"
+            
+            local empty_pass=$(bb awk -F: '$2=="" {print $1}' /etc/shadow 2>/dev/null)
+            if [ -n "$empty_pass" ]; then
+                print_error "Users with empty passwords found: $empty_pass"
+                log_to_file "$log_file" "ERROR: Users with empty passwords: $empty_pass"
+            fi
+        fi
+    fi
+    
+    # Check users with suspicious UIDs (system UIDs used by regular users)
+    if should_investigate "detailed"; then
+        execute_and_log "Check users with suspicious UIDs (1-999 range)" \
+            "bb awk -F: '\$3 >= 1 && \$3 <= 999 && \$3 != 0 {print \$1 \":\" \$3}' /etc/passwd" \
+            "$log_file" "detailed"
+    fi
+    
+    # Check for duplicate UIDs
+    if should_investigate "normal"; then
+        execute_and_log "Check for duplicate UIDs" \
+            "bb awk -F: '{print \$3}' /etc/passwd | bb sort -n | bb uniq -d" \
+            "$log_file" "normal"
+        
+        local dup_uids=$(bb awk -F: '{print $3}' /etc/passwd | bb sort -n | bb uniq -d)
+        if [ -n "$dup_uids" ]; then
+            print_error "Duplicate UIDs found: $dup_uids"
+            log_to_file "$log_file" "ERROR: Duplicate UIDs: $dup_uids"
+        fi
+    fi
+    
+    # Check sudoers file
+    if should_investigate "normal"; then
+        if [ -f /etc/sudoers ]; then
+            execute_and_log "Check sudoers configuration" \
+                "bb cat /etc/sudoers 2>/dev/null | bb grep -v '^#' | bb grep -v '^$'" \
+                "$log_file" "normal"
+        fi
+    fi
+    
+    # Summary table
+    print_section "User Investigation Summary"
+    local user_count=$(bb cat /etc/passwd | bb wc -l)
+    local login_users=$(bb cat /etc/passwd | bb grep -v 'nologin\|false' | bb wc -l)
+    local root_count=$(bb cat /etc/passwd | bb awk -F: '$3==0 {print $1}' | bb wc -l)
+    
+    echo "Total Users: $user_count"
+    echo "Users with Login Shells: $login_users"
+    echo "Users with UID 0: $root_count"
     echo ""
     
-    # Check for users with weak password hashes
-    print_command_info "Weak Password Hash Check" "cat /etc/shadow | grep -E '^\w+:\$1\$'" "user"
-    output_and_log "=== Users with Weak Password Hashes (MD5) ===" "user"
-    local weak_hash_users=$(cat /etc/shadow | grep -E '^\w+:\$1\$' | cut -d: -f1 2>/dev/null)
-    if [[ -n "$weak_hash_users" ]]; then
-        output_and_log "WARNING: Users with weak password hashes found:" "user" "WARNING"
-        echo "$weak_hash_users" | while read user; do
-            output_and_log "  - $user" "user" "WARNING"
-        done
-    else
-        output_and_log "No users with weak password hashes found" "user" "SUCCESS"
-    fi
-    echo ""
+    log_to_file "$log_file" "SUMMARY: Total users: $user_count, Login users: $login_users, Root users: $root_count"
     
-    # Check for hidden users (users with UID > 1000 but no home directory)
-    print_command_info "Hidden Users Check" "cat /etc/passwd | awk -F: '\$3 > 1000 && \$6 == \"/\" {print \$1}'" "user"
-    output_and_log "=== Hidden Users (UID > 1000, no home directory) ===" "user"
-    local hidden_users=$(cat /etc/passwd | awk -F: '$3 > 1000 && $6 == "/" {print $1}')
-    if [[ -n "$hidden_users" ]]; then
-        output_and_log "WARNING: Hidden users found:" "user" "WARNING"
-        echo "$hidden_users" | while read user; do
-            output_and_log "  - $user" "user" "WARNING"
-        done
-    else
-        output_and_log "No hidden users found" "user" "SUCCESS"
-    fi
-    echo ""
-    
-    # Check for users with unusual shells
-    print_command_info "Unusual Shells Check" "cat /etc/passwd | grep -v '/bin/bash\|/bin/sh\|/usr/sbin/nologin\|/bin/false'" "user"
-    output_and_log "=== Users with Unusual Shells ===" "user"
-    local unusual_shell_users=$(cat /etc/passwd | grep -v '/bin/bash\|/bin/sh\|/usr/sbin/nologin\|/bin/false' | cut -d: -f1,7)
-    if [[ -n "$unusual_shell_users" ]]; then
-        output_and_log "WARNING: Users with unusual shells found:" "user" "WARNING"
-        echo "$unusual_shell_users" | while IFS=: read -r user shell; do
-            output_and_log "  - $user: $shell" "user" "WARNING"
-        done
-    else
-        output_and_log "No users with unusual shells found" "user" "SUCCESS"
-    fi
-    echo ""
-    
-    log_message "INFO" "User investigation module completed" "user"
+    print_success "User investigation completed"
 }
 
-# Execute user investigation
-user_investigation 
+# Run if executed directly
+if [ "${0##*/}" = "user_investigation.sh" ]; then
+    if [ -z "$SCRIPT_DIR" ]; then
+        SCRIPT_DIR="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)" || SCRIPT_DIR="$(pwd)"
+    fi
+    export SCRIPT_DIR
+    . "$SCRIPT_DIR/config.sh"
+    set_log_paths "$(get_timestamp)"
+    investigate_users
+fi
+

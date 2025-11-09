@@ -1,254 +1,196 @@
-#!/bin/bash
-
+#!/bin/sh
 # System Investigation Module
-# Checks for system information, file system, and other important system checks
+# Checks system information, filesystem, suspicious files, etc.
 
-system_investigation() {
-    print_section "SYSTEM INVESTIGATION"
+# SCRIPT_DIR should be set by the calling script
+# If not set, try to determine it
+if [ -z "$SCRIPT_DIR" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)" || SCRIPT_DIR="$(pwd)"
+fi
+
+. "$SCRIPT_DIR/utils/utils.sh"
+. "$SCRIPT_DIR/config.sh"
+
+investigate_system() {
+    local log_file="$LOG_SYSTEM"
     
-    log_message "INFO" "Starting system investigation module" "system"
+    # Check if log file path is set
+    if [ -z "$log_file" ]; then
+        print_error "LOG_SYSTEM is not set. Cannot create log file."
+        return 1
+    fi
+    
+    # Initialize log file with header
+    {
+        echo "=========================================="
+        echo "System Investigation Module"
+        echo "Started: $(get_date)"
+        echo "=========================================="
+        echo ""
+    } > "$log_file" 2>/dev/null || {
+        print_error "Failed to create log file: $log_file"
+        return 1
+    }
+    
+    print_section "System Investigation Module"
     
     # Check system information
-    print_command_info "System Information Check" "uname -a" "system"
-    output_and_log "=== System Information ===" "system"
-    uname -a | while read line; do
-        output_and_log "$line" "system" "INFO"
-    done
-    echo ""
+    if should_investigate "minimal"; then
+        execute_and_log "Check system uptime" \
+            "bb cat /proc/uptime" \
+            "$log_file" "minimal"
+        
+        execute_and_log "Check system load average" \
+            "bb cat /proc/loadavg" \
+            "$log_file" "minimal"
+    fi
     
-    # Check system uptime
-    print_command_info "System Uptime Check" "uptime" "system"
-    output_and_log "=== System Uptime ===" "system"
-    uptime | while read line; do
-        output_and_log "$line" "system" "INFO"
-    done
-    echo ""
-    
-    # Check system load
-    print_command_info "System Load Check" "cat /proc/loadavg" "system"
-    output_and_log "=== System Load Average ===" "system"
-    cat /proc/loadavg | while read line; do
-        output_and_log "$line" "system" "INFO"
-    done
-    echo ""
+    # Check OS information
+    if should_investigate "minimal"; then
+        if [ -f /etc/os-release ]; then
+            execute_and_log "Check OS release information" \
+                "bb cat /etc/os-release" \
+                "$log_file" "minimal"
+        fi
+        
+        execute_and_log "Check kernel version" \
+            "bb uname -a" \
+            "$log_file" "minimal"
+    fi
     
     # Check disk usage
-    print_command_info "Disk Usage Check" "df -h" "system"
-    output_and_log "=== Disk Usage ===" "system"
-    df -h | while read line; do
-        output_and_log "$line" "system" "INFO"
-    done
-    echo ""
-    
-    # Check for suspicious files in common directories
-    print_command_info "Suspicious Files Check" "find /tmp /var/tmp /dev/shm -name '*miner*' -o -name '*xmr*' -o -name '*monero*' -o -name '*bitcoin*' -o -name '*eth*'" "system"
-    output_and_log "=== Suspicious Files in Temporary Directories ===" "system"
-    local suspicious_temp_files=$(find /tmp /var/tmp /dev/shm -name '*miner*' -o -name '*xmr*' -o -name '*monero*' -o -name '*bitcoin*' -o -name '*eth*' 2>/dev/null)
-    if [[ -n "$suspicious_temp_files" ]]; then
-        output_and_log "CRITICAL: Suspicious files in temporary directories found:" "system" "CRITICAL"
-        echo "$suspicious_temp_files" | while read file; do
-            local file_info=$(ls -la "$file" 2>/dev/null)
-            output_and_log "  - $file_info" "system" "CRITICAL"
-        done
-    else
-        output_and_log "No suspicious files found in temporary directories" "system" "SUCCESS"
+    if should_investigate "normal"; then
+        if bb which df >/dev/null 2>&1; then
+            execute_and_log "Check disk usage" \
+                "df -h 2>/dev/null || bb df -h" \
+                "$log_file" "normal"
+        fi
     fi
-    echo ""
+    
+    # Check for large files
+    if should_investigate "detailed"; then
+        execute_and_log "Check for large files in /tmp (top 20)" \
+            "bb find /tmp -type f -size +10M -exec bb ls -lh {} \; 2>/dev/null | bb head -20" \
+            "$log_file" "detailed"
+        
+        execute_and_log "Check for large files in /var/tmp (top 20)" \
+            "bb find /var/tmp -type f -size +10M -exec bb ls -lh {} \; 2>/dev/null | bb head -20" \
+            "$log_file" "detailed"
+    fi
+    
+    # Check /tmp for suspicious files
+    if should_investigate "normal"; then
+        execute_and_log "Check /tmp directory contents" \
+            "bb ls -la /tmp/ 2>/dev/null | bb head -50" \
+            "$log_file" "normal"
+    fi
+    
+    # Check /var/tmp for suspicious files
+    if should_investigate "normal"; then
+        execute_and_log "Check /var/tmp directory contents" \
+            "bb ls -la /var/tmp/ 2>/dev/null | bb head -50" \
+            "$log_file" "normal"
+    fi
+    
+    # Check for suspicious file permissions
+    if should_investigate "detailed"; then
+        execute_and_log "Check for world-writable files in sensitive directories" \
+            "bb find /etc /usr/bin /usr/sbin -type f -perm -002 2>/dev/null | bb head -20" \
+            "$log_file" "detailed"
+    fi
+    
+    # Check for setuid files
+    if should_investigate "normal"; then
+        execute_and_log "Check for setuid files in common directories" \
+            "bb find /usr/bin /usr/sbin /bin /sbin -type f -perm -4000 2>/dev/null | bb head -30" \
+            "$log_file" "normal"
+    fi
     
     # Check for recently modified files
-    print_command_info "Recently Modified Files Check" "find /tmp /var/tmp /dev/shm -mtime -1 -type f" "system"
-    output_and_log "=== Recently Modified Files (Last 24 Hours) ===" "system"
-    local recent_files=$(find /tmp /var/tmp /dev/shm -mtime -1 -type f 2>/dev/null)
-    if [[ -n "$recent_files" ]]; then
-        output_and_log "WARNING: Recently modified files found:" "system" "WARNING"
-        echo "$recent_files" | while read file; do
-            local file_info=$(ls -la "$file" 2>/dev/null)
-            output_and_log "  - $file_info" "system" "WARNING"
-        done
-    else
-        output_and_log "No recently modified files found" "system" "SUCCESS"
+    if should_investigate "detailed"; then
+        execute_and_log "Check recently modified files in /etc (last 7 days)" \
+            "bb find /etc -type f -mtime -7 -exec bb ls -lctr {} \; 2>/dev/null | bb head -30" \
+            "$log_file" "detailed"
     fi
-    echo ""
     
     # Check for hidden files
-    print_command_info "Hidden Files Check" "find /tmp /var/tmp /dev/shm -name '.*' -type f" "system"
-    output_and_log "=== Hidden Files in Temporary Directories ===" "system"
-    local hidden_files=$(find /tmp /var/tmp /dev/shm -name '.*' -type f 2>/dev/null)
-    if [[ -n "$hidden_files" ]]; then
-        output_and_log "WARNING: Hidden files found:" "system" "WARNING"
-        echo "$hidden_files" | while read file; do
-            local file_info=$(ls -la "$file" 2>/dev/null)
-            output_and_log "  - $file_info" "system" "WARNING"
-        done
-    else
-        output_and_log "No hidden files found" "system" "SUCCESS"
+    if should_investigate "normal"; then
+        execute_and_log "Check for hidden files in root directory" \
+            "bb ls -la /root/ | bb grep '^\.' | bb head -20" \
+            "$log_file" "normal"
     fi
-    echo ""
     
-    # Check for files with unusual permissions
-    print_command_info "Unusual File Permissions Check" "find /tmp /var/tmp /dev/shm -perm -o+x -type f" "system"
-    output_and_log "=== Files with Unusual Permissions ===" "system"
-    local unusual_perms=$(find /tmp /var/tmp /dev/shm -perm -o+x -type f 2>/dev/null)
-    if [[ -n "$unusual_perms" ]]; then
-        output_and_log "CRITICAL: Files with unusual permissions found:" "system" "CRITICAL"
-        echo "$unusual_perms" | while read file; do
-            local file_info=$(ls -la "$file" 2>/dev/null)
-            output_and_log "  - $file_info" "system" "CRITICAL"
-        done
-    else
-        output_and_log "No files with unusual permissions found" "system" "SUCCESS"
+    # Check mounted filesystems
+    if should_investigate "normal"; then
+        execute_and_log "Check mounted filesystems" \
+            "bb cat /proc/mounts" \
+            "$log_file" "normal"
     fi
-    echo ""
     
-    # Check for files with suspicious content
-    print_command_info "Files with Suspicious Content Check" "find /tmp /var/tmp /dev/shm -type f -exec grep -l -i 'miner\|xmr\|monero\|bitcoin\|eth\|gpu\|cpu' {} \;" "system"
-    output_and_log "=== Files with Suspicious Content ===" "system"
-    local suspicious_content_files=$(find /tmp /var/tmp /dev/shm -type f -exec grep -l -i 'miner\|xmr\|monero\|bitcoin\|eth\|gpu\|cpu' {} \; 2>/dev/null)
-    if [[ -n "$suspicious_content_files" ]]; then
-        output_and_log "CRITICAL: Files with suspicious content found:" "system" "CRITICAL"
-        echo "$suspicious_content_files" | while read file; do
-            output_and_log "  - $file" "system" "CRITICAL"
-            output_and_log "Content:" "system" "INFO"
-            grep -i 'miner\|xmr\|monero\|bitcoin\|eth\|gpu\|cpu' "$file" | head -5 | while read line; do
-                output_and_log "    $line" "system" "INFO"
-            done
-            echo ""
+    # Check for suspicious file names
+    if should_investigate "detailed"; then
+        local suspicious_names="miner xmrig ccminer cpuminer minerd"
+        for name in $suspicious_names; do
+            execute_and_log "Check for files containing: $name" \
+                "bb find /tmp /var/tmp /home -iname '*$name*' 2>/dev/null | bb head -20" \
+                "$log_file" "detailed"
         done
-    else
-        output_and_log "No files with suspicious content found" "system" "SUCCESS"
     fi
-    echo ""
     
-    # Check for files in unusual locations
-    print_command_info "Files in Unusual Locations Check" "find / -name '*miner*' -o -name '*xmr*' -o -name '*monero*' -o -name '*bitcoin*' -o -name '*eth*' 2>/dev/null | grep -v '/proc\|/sys\|/dev'" "system"
-    output_and_log "=== Files in Unusual Locations ===" "system"
-    local unusual_location_files=$(find / -name '*miner*' -o -name '*xmr*' -o -name '*monero*' -o -name '*bitcoin*' -o -name '*eth*' 2>/dev/null | grep -v '/proc\|/sys\|/dev')
-    if [[ -n "$unusual_location_files" ]]; then
-        output_and_log "CRITICAL: Files in unusual locations found:" "system" "CRITICAL"
-        echo "$unusual_location_files" | while read file; do
-            local file_info=$(ls -la "$file" 2>/dev/null)
-            output_and_log "  - $file_info" "system" "CRITICAL"
-        done
-    else
-        output_and_log "No files in unusual locations found" "system" "SUCCESS"
+    # Check memory information
+    if should_investigate "normal"; then
+        execute_and_log "Check memory information" \
+            "bb cat /proc/meminfo | bb head -20" \
+            "$log_file" "normal"
     fi
-    echo ""
     
-    # Check for files with unusual names
-    print_command_info "Files with Unusual Names Check" "find / -name '[0-9a-f]{32}' -o -name '[a-z]{1,2}[0-9]{1,2}' 2>/dev/null | grep -v '/proc\|/sys\|/dev'" "system"
-    output_and_log "=== Files with Unusual Names ===" "system"
-    local unusual_name_files=$(find / -name '[0-9a-f]{32}' -o -name '[a-z]{1,2}[0-9]{1,2}' 2>/dev/null | grep -v '/proc\|/sys\|/dev')
-    if [[ -n "$unusual_name_files" ]]; then
-        output_and_log "WARNING: Files with unusual names found:" "system" "WARNING"
-        echo "$unusual_name_files" | while read file; do
-            local file_info=$(ls -la "$file" 2>/dev/null)
-            output_and_log "  - $file_info" "system" "WARNING"
-        done
-    else
-        output_and_log "No files with unusual names found" "system" "SUCCESS"
+    # Check CPU information
+    if should_investigate "normal"; then
+        execute_and_log "Check CPU information" \
+            "bb cat /proc/cpuinfo | bb head -30" \
+            "$log_file" "normal"
     fi
-    echo ""
     
-    # Check for files with unusual sizes
-    print_command_info "Files with Unusual Sizes Check" "find /tmp /var/tmp /dev/shm -size +100M -type f" "system"
-    output_and_log "=== Large Files in Temporary Directories ===" "system"
-    local large_files=$(find /tmp /var/tmp /dev/shm -size +100M -type f 2>/dev/null)
-    if [[ -n "$large_files" ]]; then
-        output_and_log "WARNING: Large files in temporary directories found:" "system" "WARNING"
-        echo "$large_files" | while read file; do
-            local file_info=$(ls -la "$file" 2>/dev/null)
-            output_and_log "  - $file_info" "system" "WARNING"
-        done
-    else
-        output_and_log "No large files found in temporary directories" "system" "SUCCESS"
+    # Check for suspicious environment variables
+    if should_investigate "normal"; then
+        execute_and_log "Check environment variables" \
+            "env | bb sort" \
+            "$log_file" "normal"
     fi
-    echo ""
     
-    # Check for files with unusual timestamps
-    print_command_info "Files with Unusual Timestamps Check" "find /tmp /var/tmp /dev/shm -newermt '1 hour ago' -type f" "system"
-    output_and_log "=== Recently Created Files (Last Hour) ===" "system"
-    local recent_created_files=$(find /tmp /var/tmp /dev/shm -newermt '1 hour ago' -type f 2>/dev/null)
-    if [[ -n "$recent_created_files" ]]; then
-        output_and_log "WARNING: Recently created files found:" "system" "WARNING"
-        echo "$recent_created_files" | while read file; do
-            local file_info=$(ls -la "$file" 2>/dev/null)
-            output_and_log "  - $file_info" "system" "WARNING"
-        done
-    else
-        output_and_log "No recently created files found" "system" "SUCCESS"
+    # Check package manager logs for suspicious installations
+    if should_investigate "detailed"; then
+        if [ -f /var/log/apt/history.log ]; then
+            execute_and_log "Check recent package installations (apt)" \
+                "bb tail -50 /var/log/apt/history.log 2>/dev/null" \
+                "$log_file" "detailed"
+        fi
     fi
-    echo ""
     
-    # Check for files with unusual owners
-    print_command_info "Files with Unusual Owners Check" "find /tmp /var/tmp /dev/shm -not -user root -type f" "system"
-    output_and_log "=== Files with Unusual Owners ===" "system"
-    local unusual_owner_files=$(find /tmp /var/tmp /dev/shm -not -user root -type f 2>/dev/null)
-    if [[ -n "$unusual_owner_files" ]]; then
-        output_and_log "WARNING: Files with unusual owners found:" "system" "WARNING"
-        echo "$unusual_owner_files" | while read file; do
-            local file_info=$(ls -la "$file" 2>/dev/null)
-            output_and_log "  - $file_info" "system" "WARNING"
-        done
-    else
-        output_and_log "No files with unusual owners found" "system" "SUCCESS"
+    # Summary
+    print_section "System Investigation Summary"
+    local disk_usage=""
+    if bb which df >/dev/null 2>&1; then
+        disk_usage=$(df -h / 2>/dev/null | bb tail -1 | bb awk '{print $5}')
     fi
+    
+    echo "Root filesystem usage: $disk_usage"
+    echo "System type: $SYSTEM_TYPE"
     echo ""
     
-    # Check for files with unusual groups
-    print_command_info "Files with Unusual Groups Check" "find /tmp /var/tmp /dev/shm -not -group root -type f" "system"
-    output_and_log "=== Files with Unusual Groups ===" "system"
-    local unusual_group_files=$(find /tmp /var/tmp /dev/shm -not -group root -type f 2>/dev/null)
-    if [[ -n "$unusual_group_files" ]]; then
-        output_and_log "WARNING: Files with unusual groups found:" "system" "WARNING"
-        echo "$unusual_group_files" | while read file; do
-            local file_info=$(ls -la "$file" 2>/dev/null)
-            output_and_log "  - $file_info" "system" "WARNING"
-        done
-    else
-        output_and_log "No files with unusual groups found" "system" "SUCCESS"
-    fi
-    echo ""
+    log_to_file "$log_file" "SUMMARY: Disk usage: $disk_usage, System: $SYSTEM_TYPE"
     
-    # Check for files with unusual extensions
-    print_command_info "Files with Unusual Extensions Check" "find /tmp /var/tmp /dev/shm -name '*.exe' -o -name '*.bat' -o -name '*.cmd' -o -name '*.vbs' -o -name '*.js' -o -name '*.jar'" "system"
-    output_and_log "=== Files with Unusual Extensions ===" "system"
-    local unusual_ext_files=$(find /tmp /var/tmp /dev/shm -name '*.exe' -o -name '*.bat' -o -name '*.cmd' -o -name '*.vbs' -o -name '*.js' -o -name '*.jar' 2>/dev/null)
-    if [[ -n "$unusual_ext_files" ]]; then
-        output_and_log "CRITICAL: Files with unusual extensions found:" "system" "CRITICAL"
-        echo "$unusual_ext_files" | while read file; do
-            local file_info=$(ls -la "$file" 2>/dev/null)
-            output_and_log "  - $file_info" "system" "CRITICAL"
-        done
-    else
-        output_and_log "No files with unusual extensions found" "system" "SUCCESS"
-    fi
-    echo ""
-    
-    # Check for files with unusual content types
-    print_command_info "Files with Unusual Content Types Check" "find /tmp /var/tmp /dev/shm -type f -exec file {} \; | grep -i 'executable\|script\|archive'" "system"
-    output_and_log "=== Files with Unusual Content Types ===" "system"
-    local unusual_content_types=$(find /tmp /var/tmp /dev/shm -type f -exec file {} \; 2>/dev/null | grep -i 'executable\|script\|archive')
-    if [[ -n "$unusual_content_types" ]]; then
-        output_and_log "WARNING: Files with unusual content types found:" "system" "WARNING"
-        echo "$unusual_content_types" | while read line; do
-            output_and_log "  - $line" "system" "WARNING"
-        done
-    else
-        output_and_log "No files with unusual content types found" "system" "SUCCESS"
-    fi
-    echo ""
-    
-    # Check for files with unusual checksums
-    print_command_info "Files with Unusual Checksums Check" "find /tmp /var/tmp /dev/shm -type f -exec md5sum {} \;" "system"
-    output_and_log "=== Files with Checksums ===" "system"
-    find /tmp /var/tmp /dev/shm -type f 2>/dev/null | head -10 | while read file; do
-        local checksum=$(md5sum "$file" 2>/dev/null | cut -d' ' -f1)
-        output_and_log "$file: $checksum" "system" "INFO"
-    done
-    echo ""
-    
-    log_message "INFO" "System investigation module completed" "system"
+    print_success "System investigation completed"
 }
 
-# Execute system investigation
-system_investigation 
+# Run if executed directly
+if [ "${0##*/}" = "system_investigation.sh" ]; then
+    if [ -z "$SCRIPT_DIR" ]; then
+        SCRIPT_DIR="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)" || SCRIPT_DIR="$(pwd)"
+    fi
+    export SCRIPT_DIR
+    . "$SCRIPT_DIR/config.sh"
+    set_log_paths "$(get_timestamp)"
+    investigate_system
+fi
+

@@ -1,190 +1,174 @@
-#!/bin/bash
-
+#!/bin/sh
 # Startup Investigation Module
-# Checks for suspicious startup services, systemd services, and auto-start configurations
+# Checks autostart tasks, systemd services, etc.
 
-startup_investigation() {
-    print_section "STARTUP INVESTIGATION"
+# SCRIPT_DIR should be set by the calling script
+# If not set, try to determine it
+if [ -z "$SCRIPT_DIR" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)" || SCRIPT_DIR="$(pwd)"
+fi
+
+. "$SCRIPT_DIR/utils/utils.sh"
+. "$SCRIPT_DIR/config.sh"
+
+investigate_startup() {
+    local log_file="$LOG_STARTUP"
     
-    log_message "INFO" "Starting startup investigation module" "startup"
+    # Check if log file path is set
+    if [ -z "$log_file" ]; then
+        print_error "LOG_STARTUP is not set. Cannot create log file."
+        return 1
+    fi
     
-    # Check systemd enabled services
-    print_command_info "Systemd Enabled Services Check" "systemctl list-unit-files --type=service | grep enabled" "startup"
-    output_and_log "=== Systemd Enabled Services ===" "startup"
-    output_and_log "UNIT\t\t\t\t\tLOAD\tACTIVE\tSUB\tDESCRIPTION" "startup" "INFO"
-    output_and_log "----\t\t\t\t\t----\t------\t---\t-----------" "startup" "INFO"
-    systemctl list-unit-files --type=service | grep enabled | while read line; do
-        output_and_log "$line" "startup" "INFO"
-    done
-    echo ""
+    # Initialize log file with header
+    {
+        echo "=========================================="
+        echo "Startup Investigation Module"
+        echo "Started: $(get_date)"
+        echo "=========================================="
+        echo ""
+    } > "$log_file" 2>/dev/null || {
+        print_error "Failed to create log file: $log_file"
+        return 1
+    }
+    
+    print_section "Startup Investigation Module"
+    
+    # Check systemd services
+    if should_investigate "minimal"; then
+        if bb which systemctl >/dev/null 2>&1; then
+            execute_and_log "Check enabled systemd services" \
+                "systemctl list-unit-files --type=service --state=enabled 2>/dev/null | bb head -100" \
+                "$log_file" "minimal"
+        fi
+    fi
+    
+    # Check all systemd unit files
+    if should_investigate "normal"; then
+        if bb which systemctl >/dev/null 2>&1; then
+            execute_and_log "Check all systemd unit files" \
+                "systemctl list-unit-files --type=service 2>/dev/null | bb head -100" \
+                "$log_file" "normal"
+        fi
+    fi
+    
+    # Check systemd system directory
+    if should_investigate "normal"; then
+        if [ -d /etc/systemd/system ]; then
+            execute_and_log "Check /etc/systemd/system directory" \
+                "bb ls -la /etc/systemd/system/ 2>/dev/null" \
+                "$log_file" "normal"
+        fi
+    fi
+    
+    # Check systemd multi-user target wants
+    if should_investigate "normal"; then
+        if [ -d /etc/systemd/system/multi-user.target.wants ]; then
+            execute_and_log "Check multi-user.target.wants directory" \
+                "bb ls -la /etc/systemd/system/multi-user.target.wants/ 2>/dev/null" \
+                "$log_file" "normal"
+        fi
+    fi
+    
+    # Check rc.local
+    if should_investigate "normal"; then
+        if [ -f /etc/rc.local ]; then
+            execute_and_log "Check /etc/rc.local" \
+                "bb cat /etc/rc.local" \
+                "$log_file" "normal"
+        elif [ -f /etc/rc.d/rc.local ]; then
+            execute_and_log "Check /etc/rc.d/rc.local" \
+                "bb cat /etc/rc.d/rc.local" \
+                "$log_file" "normal"
+        fi
+    fi
+    
+    # Check user startup scripts
+    if should_investigate "normal"; then
+        execute_and_log "Check user .bashrc startup scripts" \
+            "bb find /home /root -name .bashrc -exec bb sh -c 'echo \"=== {} ===\"; bb tail -20 {}' \; 2>/dev/null" \
+            "$log_file" "normal"
+        
+        execute_and_log "Check user .bash_profile startup scripts" \
+            "bb find /home /root -name .bash_profile -exec bb sh -c 'echo \"=== {} ===\"; bb cat {}' \; 2>/dev/null" \
+            "$log_file" "normal"
+        
+        execute_and_log "Check user .profile startup scripts" \
+            "bb find /home /root -name .profile -exec bb sh -c 'echo \"=== {} ===\"; bb cat {}' \; 2>/dev/null" \
+            "$log_file" "normal"
+    fi
+    
+    # Check autostart directories
+    if should_investigate "normal"; then
+        local autostart_dirs="/etc/xdg/autostart /home/*/.config/autostart /root/.config/autostart"
+        for dir in $autostart_dirs; do
+            if [ -d "$dir" ]; then
+                execute_and_log "Check autostart directory: $dir" \
+                    "bb ls -la $dir 2>/dev/null" \
+                    "$log_file" "normal"
+            fi
+        done
+    fi
+    
+    # Check init.d scripts
+    if should_investigate "normal"; then
+        if [ -d /etc/init.d ]; then
+            execute_and_log "Check /etc/init.d scripts" \
+                "bb ls -la /etc/init.d/ 2>/dev/null | bb head -50" \
+                "$log_file" "normal"
+        fi
+    fi
+    
+    # Check systemd timers
+    if should_investigate "detailed"; then
+        if bb which systemctl >/dev/null 2>&1; then
+            execute_and_log "Check systemd timers" \
+                "systemctl list-timers --all 2>/dev/null" \
+                "$log_file" "detailed"
+        fi
+    fi
     
     # Check for suspicious systemd services
-    print_command_info "Suspicious Systemd Services Check" "systemctl list-unit-files --type=service | grep -i 'miner\|xmr\|monero\|bitcoin\|eth\|gpu\|cpu'" "startup"
-    output_and_log "=== Suspicious Systemd Services ===" "startup"
-    local suspicious_services=$(systemctl list-unit-files --type=service | grep -i 'miner\|xmr\|monero\|bitcoin\|eth\|gpu\|cpu')
-    if [[ -n "$suspicious_services" ]]; then
-        output_and_log "CRITICAL: Suspicious systemd services found:" "startup" "CRITICAL"
-        echo "$suspicious_services" | while read line; do
-            output_and_log "  - $line" "startup" "CRITICAL"
-        done
-    else
-        output_and_log "No suspicious systemd services found" "startup" "SUCCESS"
-    fi
-    echo ""
-    
-    # Check systemd service files
-    print_command_info "Systemd Service Files Check" "ls -la /etc/systemd/system/" "startup"
-    output_and_log "=== Systemd Service Files ===" "startup"
-    ls -la /etc/systemd/system/ | while read line; do
-        output_and_log "$line" "startup" "INFO"
-    done
-    echo ""
-    
-    # Check multi-user target wants
-    print_command_info "Multi-user Target Wants Check" "ls -la /etc/systemd/system/multi-user.target.wants/" "startup"
-    output_and_log "=== Multi-user Target Wants ===" "startup"
-    if [[ -d /etc/systemd/system/multi-user.target.wants ]]; then
-        ls -la /etc/systemd/system/multi-user.target.wants/ | while read line; do
-            output_and_log "$line" "startup" "INFO"
-        done
-    else
-        output_and_log "Multi-user target wants directory not found" "startup" "WARNING"
-    fi
-    echo ""
-    
-    # Check rc.local file
-    print_command_info "RC Local Check" "cat /etc/rc.d/rc.local" "startup"
-    output_and_log "=== RC Local File ===" "startup"
-    if [[ -f /etc/rc.d/rc.local ]]; then
-        if [[ -s /etc/rc.d/rc.local ]]; then
-            output_and_log "WARNING: RC local file contains commands:" "startup" "WARNING"
-            cat /etc/rc.d/rc.local | while read line; do
-                output_and_log "  $line" "startup" "WARNING"
-            done
-        else
-            output_and_log "RC local file is empty" "startup" "SUCCESS"
+    if should_investigate "detailed"; then
+        if [ -d /etc/systemd/system ]; then
+            execute_and_log "Check for suspicious systemd service files" \
+                "bb find /etc/systemd/system -name '*.service' -exec bb sh -c 'echo \"=== {} ===\"; bb cat {}' \; 2>/dev/null" \
+                "$log_file" "detailed"
         fi
-    else
-        output_and_log "RC local file not found" "startup" "SUCCESS"
     fi
-    echo ""
     
-    # Check for startup scripts in /etc/init.d
-    print_command_info "Init.d Scripts Check" "ls -la /etc/init.d/" "startup"
-    output_and_log "=== Init.d Scripts ===" "startup"
-    ls -la /etc/init.d/ | while read line; do
-        output_and_log "$line" "startup" "INFO"
-    done
-    echo ""
-    
-    # Check for suspicious init.d scripts
-    print_command_info "Suspicious Init.d Scripts Check" "ls /etc/init.d/ | grep -i 'miner\|xmr\|monero\|bitcoin\|eth\|gpu\|cpu'" "startup"
-    output_and_log "=== Suspicious Init.d Scripts ===" "startup"
-    local suspicious_init_scripts=$(ls /etc/init.d/ | grep -i 'miner\|xmr\|monero\|bitcoin\|eth\|gpu\|cpu' 2>/dev/null)
-    if [[ -n "$suspicious_init_scripts" ]]; then
-        output_and_log "CRITICAL: Suspicious init.d scripts found:" "startup" "CRITICAL"
-        echo "$suspicious_init_scripts" | while read script; do
-            output_and_log "  - $script" "startup" "CRITICAL"
-        done
-    else
-        output_and_log "No suspicious init.d scripts found" "startup" "SUCCESS"
-    fi
-    echo ""
-    
-    # Check for startup scripts in user directories
-    print_command_info "User Startup Scripts Check" "find /home -name '.*rc' -o -name '.*profile' -type f" "startup"
-    output_and_log "=== User Startup Scripts ===" "startup"
-    find /home -name ".*rc" -o -name ".*profile" -type f 2>/dev/null | while read script; do
-        output_and_log "User startup script: $script" "startup" "INFO"
-        if [[ -s "$script" ]]; then
-            output_and_log "Content:" "startup" "INFO"
-            cat "$script" | while read line; do
-                output_and_log "  $line" "startup" "INFO"
-            done
+    # Check /etc/init directory (upstart)
+    if should_investigate "detailed"; then
+        if [ -d /etc/init ]; then
+            execute_and_log "Check /etc/init directory (upstart)" \
+                "bb ls -la /etc/init/ 2>/dev/null" \
+                "$log_file" "detailed"
         fi
-        echo ""
-    done
-    
-    # Check for startup scripts in root directory
-    print_command_info "Root Startup Scripts Check" "find /root -name '.*rc' -o -name '.*profile' -type f" "startup"
-    output_and_log "=== Root Startup Scripts ===" "startup"
-    find /root -name ".*rc" -o -name ".*profile" -type f 2>/dev/null | while read script; do
-        output_and_log "Root startup script: $script" "startup" "INFO"
-        if [[ -s "$script" ]]; then
-            output_and_log "Content:" "startup" "INFO"
-            cat "$script" | while read line; do
-                output_and_log "  $line" "startup" "INFO"
-            done
-        fi
-        echo ""
-    done
-    
-    # Check for startup applications
-    print_command_info "Startup Applications Check" "ls -la /etc/xdg/autostart/" "startup"
-    output_and_log "=== Startup Applications ===" "startup"
-    if [[ -d /etc/xdg/autostart ]]; then
-        ls -la /etc/xdg/autostart/ | while read line; do
-            output_and_log "$line" "startup" "INFO"
-        done
-    else
-        output_and_log "No startup applications directory found" "startup" "SUCCESS"
     fi
-    echo ""
     
-    # Check for systemd user services
-    print_command_info "Systemd User Services Check" "systemctl --user list-unit-files --type=service | grep enabled" "startup"
-    output_and_log "=== Systemd User Services ===" "startup"
-    systemctl --user list-unit-files --type=service | grep enabled 2>/dev/null | while read line; do
-        output_and_log "$line" "startup" "INFO"
-    done
-    echo ""
-    
-    # Check for recently modified startup files
-    print_command_info "Recently Modified Startup Files Check" "find /etc/systemd/system /etc/init.d /etc/rc.d -mtime -7 -type f" "startup"
-    output_and_log "=== Recently Modified Startup Files (Last 7 Days) ===" "startup"
-    local recent_startup_files=$(find /etc/systemd/system /etc/init.d /etc/rc.d -mtime -7 -type f 2>/dev/null)
-    if [[ -n "$recent_startup_files" ]]; then
-        output_and_log "WARNING: Recently modified startup files found:" "startup" "WARNING"
-        echo "$recent_startup_files" | while read file; do
-            local file_info=$(ls -la "$file" 2>/dev/null)
-            output_and_log "  - $file_info" "startup" "WARNING"
-        done
-    else
-        output_and_log "No recently modified startup files found" "startup" "SUCCESS"
+    # Summary
+    print_section "Startup Investigation Summary"
+    local service_count=0
+    if bb which systemctl >/dev/null 2>&1; then
+        service_count=$(systemctl list-unit-files --type=service --state=enabled 2>/dev/null | bb wc -l)
     fi
+    
+    echo "Enabled systemd services: $service_count"
     echo ""
     
-    # Check for startup scripts with unusual permissions
-    print_command_info "Unusual Startup Script Permissions Check" "find /etc/init.d /etc/systemd/system -perm -o+w -type f" "startup"
-    output_and_log "=== Startup Scripts with Unusual Permissions ===" "startup"
-    local unusual_perms=$(find /etc/init.d /etc/systemd/system -perm -o+w -type f 2>/dev/null)
-    if [[ -n "$unusual_perms" ]]; then
-        output_and_log "CRITICAL: Startup scripts with unusual permissions found:" "startup" "CRITICAL"
-        echo "$unusual_perms" | while read file; do
-            local file_info=$(ls -la "$file" 2>/dev/null)
-            output_and_log "  - $file_info" "startup" "CRITICAL"
-        done
-    else
-        output_and_log "No startup scripts with unusual permissions found" "startup" "SUCCESS"
-    fi
-    echo ""
+    log_to_file "$log_file" "SUMMARY: Enabled services: $service_count"
     
-    # Check for startup scripts with suspicious content
-    print_command_info "Suspicious Startup Script Content Check" "grep -r -i 'miner\|xmr\|monero\|bitcoin\|eth\|gpu\|cpu' /etc/init.d/ /etc/systemd/system/" "startup"
-    output_and_log "=== Startup Scripts with Suspicious Content ===" "startup"
-    local suspicious_content=$(grep -r -i 'miner\|xmr\|monero\|bitcoin\|eth\|gpu\|cpu' /etc/init.d/ /etc/systemd/system/ 2>/dev/null)
-    if [[ -n "$suspicious_content" ]]; then
-        output_and_log "CRITICAL: Startup scripts with suspicious content found:" "startup" "CRITICAL"
-        echo "$suspicious_content" | while read line; do
-            output_and_log "  - $line" "startup" "CRITICAL"
-        done
-    else
-        output_and_log "No startup scripts with suspicious content found" "startup" "SUCCESS"
-    fi
-    echo ""
-    
-    log_message "INFO" "Startup investigation module completed" "startup"
+    print_success "Startup investigation completed"
 }
 
-# Execute startup investigation
-startup_investigation 
+# Run if executed directly
+if [ "${0##*/}" = "startup_investigation.sh" ]; then
+    if [ -z "$SCRIPT_DIR" ]; then
+        SCRIPT_DIR="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)" || SCRIPT_DIR="$(pwd)"
+    fi
+    export SCRIPT_DIR
+    . "$SCRIPT_DIR/config.sh"
+    set_log_paths "$(get_timestamp)"
+    investigate_startup
+fi
+

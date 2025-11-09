@@ -1,0 +1,109 @@
+* { 
+    margin: 0; 
+    padding: 0; 
+    box-sizing: border-box; 
+}
+body {
+    font-family: 'Arial', 'Helvetica', sans-serif;
+    background: #f5f7fa;
+    background-image: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
+    color: #2c3e50;
+    padding: 20px;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.login-box {
+    background: #ffffff;
+    padding: 40px;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    max-width: 420px;
+    width: 100%;
+    border: 1px solid #e1e8ed;
+}
+.login-box h2 {
+    color: #2c3e50;
+    margin-bottom: 15px;
+    text-align: center;
+    font-size: 1.6em;
+    font-weight: 600;
+}
+.login-box .subtitle {
+    text-align: center;
+    margin-bottom: 30px;
+    color: #5a6c7d;
+    font-size: 0.95em;
+}
+.login-box input {
+    width: 100%;
+    padding: 14px;
+    margin: 10px 0;
+    border: 2px solid #d1d9e0;
+    border-radius: 6px;
+    font-size: 16px;
+    box-sizing: border-box;
+    background: #ffffff;
+    color: #2c3e50;
+    font-family: 'Arial', sans-serif;
+}
+.login-box input:focus {
+    outline: none;
+    border-color: #3498db;
+    background: #ffffff;
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+}
+.login-box input::placeholder {
+    color: #95a5a6;
+}
+.login-box button {
+    width: 100%;
+    padding: 14px;
+    background: #3498db;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    font-size: 16px;
+    cursor: pointer;
+    margin-top: 15px;
+    transition: all 0.3s;
+    font-family: 'Arial', sans-serif;
+    font-weight: 600;
+}
+.login-box button:hover {
+    background: #2980b9;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+}
+.login-box button:active {
+    transform: translateY(0);
+}
+.error {
+    color: #e74c3c;
+    margin-top: 15px;
+    display: none;
+    text-align: center;
+    padding: 12px;
+    background: #fdf2f2;
+    border-radius: 6px;
+    border: 1px solid #fadbd8;
+    font-size: 0.9em;
+}
+.info {
+    margin-top: 25px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border-left: 4px solid #3498db;
+    font-size: 0.85em;
+    color: #5a6c7d;
+    line-height: 1.6;
+}
+.info strong {
+    color: #2c3e50;
+    display: block;
+    margin-bottom: 8px;
+    font-size: 1em;
+}
+

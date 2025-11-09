@@ -1,146 +1,175 @@
-#!/bin/bash
-
+#!/bin/sh
 # Command Investigation Module
-# Checks for command tampering, aliases, and ensures command integrity
+# Checks if commands are tampered, aliases, PATH, etc.
 
-command_investigation() {
-    print_section "COMMAND INVESTIGATION"
+# SCRIPT_DIR should be set by the calling script
+# If not set, try to determine it
+if [ -z "$SCRIPT_DIR" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)" || SCRIPT_DIR="$(pwd)"
+fi
+
+. "$SCRIPT_DIR/utils/utils.sh"
+. "$SCRIPT_DIR/config.sh"
+
+investigate_commands() {
+    local log_file="$LOG_COMMAND"
     
-    log_message "INFO" "Starting command investigation module" "command"
-    
-    # Check current aliases
-    print_command_info "Alias Check" "alias" "command"
-    output_and_log "=== Current Aliases ===" "command"
-    alias | while read line; do
-        output_and_log "$line" "command" "INFO"
-    done
-    echo ""
-    
-    # Check for suspicious aliases
-    print_command_info "Suspicious Alias Check" "alias | grep -i 'ls\|ps\|netstat\|wget\|curl'" "command"
-    output_and_log "=== Suspicious Aliases Found ===" "command"
-    local suspicious_aliases=$(alias | grep -i 'ls\|ps\|netstat\|wget\|curl' 2>/dev/null)
-    if [[ -n "$suspicious_aliases" ]]; then
-        output_and_log "CRITICAL: Suspicious aliases found:" "command" "CRITICAL"
-        echo "$suspicious_aliases" | while read alias_line; do
-            output_and_log "  - $alias_line" "command" "CRITICAL"
-        done
-    else
-        output_and_log "No suspicious aliases found" "command" "SUCCESS"
+    # Check if log file path is set
+    if [ -z "$log_file" ]; then
+        print_error "LOG_COMMAND is not set. Cannot create log file."
+        return 1
     fi
-    echo ""
     
-    # Check for command tampering in common directories
-    print_command_info "Command Tampering Check" "find /usr/bin /usr/sbin /bin /sbin -name 'ls' -o -name 'ps' -o -name 'netstat' -o -name 'wget' -o -name 'curl'" "command"
-    output_and_log "=== Critical Commands Integrity Check ===" "command"
-    local critical_commands=("ls" "ps" "netstat" "wget" "curl" "ssh" "scp" "nc" "ncat")
+    # Initialize log file with header
+    {
+        echo "=========================================="
+        echo "Command Investigation Module"
+        echo "Started: $(get_date)"
+        echo "=========================================="
+        echo ""
+    } > "$log_file" 2>/dev/null || {
+        print_error "Failed to create log file: $log_file"
+        return 1
+    }
     
-    for cmd in "${critical_commands[@]}"; do
-        local cmd_path=$(which "$cmd" 2>/dev/null)
-        if [[ -n "$cmd_path" ]]; then
-            local file_info=$(ls -la "$cmd_path" 2>/dev/null)
-            local file_hash=$(md5sum "$cmd_path" 2>/dev/null | cut -d' ' -f1)
-            output_and_log "Command: $cmd" "command" "INFO"
-            output_and_log "Path: $cmd_path" "command" "INFO"
-            output_and_log "File Info: $file_info" "command" "INFO"
-            output_and_log "MD5 Hash: $file_hash" "command" "INFO"
-            echo ""
-        fi
-    done
+    print_section "Command Investigation Module"
     
-    # Check for hidden files in common directories
-    print_command_info "Hidden Files Check" "find /usr/bin /usr/sbin /bin /sbin -name '.*' -type f" "command"
-    output_and_log "=== Hidden Files in System Directories ===" "command"
-    local hidden_files=$(find /usr/bin /usr/sbin /bin /sbin -name '.*' -type f 2>/dev/null)
-    if [[ -n "$hidden_files" ]]; then
-        output_and_log "WARNING: Hidden files found in system directories:" "command" "WARNING"
-        echo "$hidden_files" | while read file; do
-            local file_info=$(ls -la "$file" 2>/dev/null)
-            output_and_log "  - $file_info" "command" "WARNING"
-        done
-    else
-        output_and_log "No hidden files found in system directories" "command" "SUCCESS"
+    # Check aliases
+    if should_investigate "minimal"; then
+        execute_and_log "Check current aliases" \
+            "alias 2>/dev/null || echo 'No aliases found'" \
+            "$log_file" "minimal"
     fi
-    echo ""
-    
-    # Check for modified files in last 7 days
-    print_command_info "Recently Modified Files Check" "find /usr/bin /usr/sbin /bin /sbin -mtime -7 -type f" "command"
-    output_and_log "=== Recently Modified System Files (Last 7 Days) ===" "command"
-    local recent_files=$(find /usr/bin /usr/sbin /bin /sbin -mtime -7 -type f 2>/dev/null)
-    if [[ -n "$recent_files" ]]; then
-        output_and_log "WARNING: Recently modified system files found:" "command" "WARNING"
-        echo "$recent_files" | while read file; do
-            local file_info=$(ls -la "$file" 2>/dev/null)
-            output_and_log "  - $file_info" "command" "WARNING"
-        done
-    else
-        output_and_log "No recently modified system files found" "command" "SUCCESS"
-    fi
-    echo ""
-    
-    # Check for busybox installation
-    print_command_info "Busybox Check" "which busybox" "command"
-    output_and_log "=== Busybox Availability Check ===" "command"
-    if command -v busybox >/dev/null 2>&1; then
-        output_and_log "Busybox is available" "command" "SUCCESS"
-        output_and_log "Busybox version:" "command" "INFO"
-        busybox --help | head -5 | while read line; do
-            output_and_log "$line" "command" "INFO"
-        done
-    else
-        output_and_log "Busybox not found. Installing for command integrity..." "command" "WARNING"
-        apt update && apt install -y busybox-static
-        if command -v busybox >/dev/null 2>&1; then
-            output_and_log "Busybox installed successfully" "command" "SUCCESS"
-        else
-            output_and_log "Failed to install busybox" "command" "ERROR"
-        fi
-    fi
-    echo ""
     
     # Check PATH environment variable
-    print_command_info "PATH Environment Check" "echo \$PATH" "command"
-    output_and_log "=== PATH Environment Variable ===" "command"
-    output_and_log "Current PATH: $PATH" "command" "INFO"
-    echo ""
-    
-    # Check for writable directories in PATH
-    print_command_info "Writable PATH Directories Check" "echo \$PATH | tr ':' '\n' | xargs -I {} sh -c 'test -w {} && echo {}'" "command"
-    output_and_log "=== Writable Directories in PATH ===" "command"
-    echo "$PATH" | tr ':' '\n' | while read dir; do
-        if [[ -w "$dir" ]]; then
-            output_and_log "CRITICAL: Writable directory in PATH: $dir" "command" "CRITICAL"
+    if should_investigate "minimal"; then
+        execute_and_log "Check PATH environment variable" \
+            "echo \"\$PATH\" | bb tr ':' '\n' | bb nl" \
+            "$log_file" "minimal"
+        
+        local suspicious_paths=$(echo "$PATH" | bb tr ':' '\n' | bb grep -E '^(/tmp|/var/tmp|\.)')
+        if [ -n "$suspicious_paths" ]; then
+            print_error "Suspicious paths in PATH: $suspicious_paths"
+            log_to_file "$log_file" "ERROR: Suspicious paths in PATH: $suspicious_paths"
         fi
-    done
-    echo ""
+    fi
     
-    # Check for command substitution in shell configuration files
-    print_command_info "Shell Configuration Check" "find /home /root -name '.*rc' -o -name '.*profile' -type f" "command"
-    output_and_log "=== Shell Configuration Files ===" "command"
-    find /home /root -name ".*rc" -o -name ".*profile" -type f 2>/dev/null | while read config_file; do
-        output_and_log "Config File: $config_file" "command" "INFO"
-        if [[ -s "$config_file" ]]; then
-            output_and_log "Content:" "command" "INFO"
-            cat "$config_file" | while read line; do
-                output_and_log "  $line" "command" "INFO"
-            done
+    # Check shell configuration files
+    if should_investigate "normal"; then
+        execute_and_log "Check .bashrc files" \
+            "bb find /home /root -name .bashrc -type f -exec bb ls -lctr {} \; 2>/dev/null" \
+            "$log_file" "normal"
+        
+        execute_and_log "Check .bash_profile files" \
+            "bb find /home /root -name .bash_profile -type f -exec bb ls -lctr {} \; 2>/dev/null" \
+            "$log_file" "normal"
+        
+        execute_and_log "Check .profile files" \
+            "bb find /home /root -name .profile -type f -exec bb ls -lctr {} \; 2>/dev/null" \
+            "$log_file" "normal"
+    fi
+    
+    # Check system-wide shell configuration
+    if should_investigate "normal"; then
+        if [ -f /etc/bash.bashrc ]; then
+            execute_and_log "Check /etc/bash.bashrc" \
+                "bb cat /etc/bash.bashrc | bb grep -v '^#' | bb grep -v '^$' | bb head -50" \
+                "$log_file" "normal"
         fi
-        echo ""
-    done
+        
+        if [ -f /etc/profile ]; then
+            execute_and_log "Check /etc/profile" \
+                "bb cat /etc/profile | bb grep -v '^#' | bb grep -v '^$' | bb head -50" \
+                "$log_file" "normal"
+        fi
+    fi
     
-    # Check for command history
-    print_command_info "Command History Check" "history" "command"
-    output_and_log "=== Recent Command History ===" "command"
-    if [[ -f ~/.bash_history ]]; then
-        output_and_log "Recent commands from bash history:" "command" "INFO"
-        tail -20 ~/.bash_history | while read cmd; do
-            output_and_log "  $cmd" "command" "INFO"
+    # Check for suspicious commands in common locations
+    if should_investigate "detailed"; then
+        execute_and_log "Check for suspicious binaries in /tmp and /var/tmp" \
+            "bb find /tmp /var/tmp -type f -executable 2>/dev/null | bb head -20" \
+            "$log_file" "detailed"
+    fi
+    
+    # Check which/whereis for common commands
+    if should_investigate "normal"; then
+        local commands="ls ps netstat ss top kill"
+        for cmd in $commands; do
+            execute_and_log "Check location of $cmd command" \
+                "bb which $cmd 2>/dev/null || echo 'Command not found in PATH'" \
+                "$log_file" "normal"
         done
     fi
+    
+    # Check file permissions of common binaries
+    if should_investigate "detailed"; then
+        local bin_paths="/bin /usr/bin /usr/local/bin /sbin /usr/sbin"
+        for bin_path in $bin_paths; do
+            if [ -d "$bin_path" ]; then
+                execute_and_log "Check suspicious permissions in $bin_path" \
+                    "bb find $bin_path -type f -perm -002 -exec bb ls -l {} \; 2>/dev/null | bb head -10" \
+                    "$log_file" "detailed"
+            fi
+        done
+    fi
+    
+    # Check for setuid/setgid binaries
+    if should_investigate "normal"; then
+        execute_and_log "Check for setuid binaries" \
+            "bb find /usr/bin /usr/sbin /bin /sbin -type f -perm -4000 2>/dev/null | bb head -30" \
+            "$log_file" "normal"
+        
+        execute_and_log "Check for setgid binaries" \
+            "bb find /usr/bin /usr/sbin /bin /sbin -type f -perm -2000 2>/dev/null | bb head -30" \
+            "$log_file" "normal"
+    fi
+    
+    # Check LD_PRELOAD and LD_LIBRARY_PATH
+    if should_investigate "normal"; then
+        execute_and_log "Check LD_PRELOAD environment variable" \
+            "echo \"LD_PRELOAD=\$LD_PRELOAD\"" \
+            "$log_file" "normal"
+        
+        execute_and_log "Check LD_LIBRARY_PATH environment variable" \
+            "echo \"LD_LIBRARY_PATH=\$LD_LIBRARY_PATH\"" \
+            "$log_file" "normal"
+        
+        if [ -n "$LD_PRELOAD" ]; then
+            print_error "LD_PRELOAD is set: $LD_PRELOAD"
+            log_to_file "$log_file" "ERROR: LD_PRELOAD is set: $LD_PRELOAD"
+        fi
+    fi
+    
+    # Check /etc/ld.so.preload
+    if should_investigate "normal"; then
+        if [ -f /etc/ld.so.preload ]; then
+            execute_and_log "Check /etc/ld.so.preload (preloaded libraries)" \
+                "bb cat /etc/ld.so.preload" \
+                "$log_file" "normal"
+            print_warning "/etc/ld.so.preload exists - could indicate library hijacking"
+        fi
+    fi
+    
+    # Recommendation to use busybox
+    print_section "Command Investigation Summary"
+    print_info "Recommendation: Use busybox for trusted command execution"
+    print_info "Busybox location: $BUSYBOX"
+    print_info "Example: $BUSYBOX ls -la"
     echo ""
     
-    log_message "INFO" "Command investigation module completed" "command"
+    log_to_file "$log_file" "INFO: Recommendation to use busybox for trusted commands"
+    
+    print_success "Command investigation completed"
 }
 
-# Execute command investigation
-command_investigation 
+# Run if executed directly
+if [ "${0##*/}" = "command_investigation.sh" ]; then
+    if [ -z "$SCRIPT_DIR" ]; then
+        SCRIPT_DIR="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)" || SCRIPT_DIR="$(pwd)"
+    fi
+    export SCRIPT_DIR
+    . "$SCRIPT_DIR/config.sh"
+    set_log_paths "$(get_timestamp)"
+    investigate_commands
+fi
+

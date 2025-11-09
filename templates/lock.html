@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emergency Response Script - Authentication</title>
+    <link rel="stylesheet" href="css/lock.css">
+</head>
+<body>
+    <div class="login-box">
+        <h2>[LOCK] Emergency Response Script</h2>
+        <p class="subtitle">Enter access password to view investigation results</p>
+        <input type="password" id="password" placeholder="Enter password" autofocus>
+        <button onclick="checkPassword()">Access Results</button>
+        <div class="error" id="error"></div>
+        <div class="info">
+            <strong>[INFO] Information</strong>
+            This is a secured area. Please contact the system administrator for the access password.
+        </div>
+    </div>
+
+    <script>
+        // Password and session ID will be replaced by the script
+        const correctPassword = 'PASSWORD_PLACEHOLDER';
+        const currentSessionId = 'SESSION_ID_PLACEHOLDER';
+        
+        function checkPassword() {
+            const input = document.getElementById('password').value;
+            const error = document.getElementById('error');
+            
+            if (!input) {
+                error.textContent = 'Please enter a password.';
+                error.style.display = 'block';
+                return;
+            }
+            
+            if (input === correctPassword) {
+                // Clear any old session data
+                sessionStorage.removeItem('ers_authenticated');
+                sessionStorage.removeItem('ers_auth_timestamp');
+                sessionStorage.removeItem('ers_session_id');
+                
+                // Set authentication flag and session ID in sessionStorage
+                sessionStorage.setItem('ers_authenticated', 'true');
+                sessionStorage.setItem('ers_auth_timestamp', Date.now().toString());
+                sessionStorage.setItem('ers_session_id', currentSessionId);
+                
+                // Redirect to index.html
+                window.location.href = 'index.html';
+            } else {
+                error.textContent = 'Incorrect password. Please try again.';
+                error.style.display = 'block';
+                // Clear the input field
+                document.getElementById('password').value = '';
+                document.getElementById('password').focus();
+            }
+        }
+        
+        // Handle Enter key in password field
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('password').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    checkPassword();
+                }
+            });
+            
+            // Check if user has a valid session for this server instance
+            const storedSessionId = sessionStorage.getItem('ers_session_id');
+            const isAuthenticated = sessionStorage.getItem('ers_authenticated') === 'true';
+            
+            // Only redirect if authenticated AND session ID matches
+            if (isAuthenticated && storedSessionId === currentSessionId) {
+                window.location.href = 'index.html';
+            } else if (isAuthenticated && storedSessionId !== currentSessionId) {
+                // Old session detected, clear it and require re-authentication
+                sessionStorage.clear();
+                // Show message that session has expired
+                const error = document.getElementById('error');
+                error.textContent = 'Session expired. Server has been restarted. Please enter the new password.';
+                error.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>
+
